@@ -220,4 +220,6 @@ __marimo__/
 
 # my list
 .vscode
-
+.git
+__pycache__
+.pytest_cache

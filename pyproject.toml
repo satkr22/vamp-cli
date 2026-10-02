@@ -30,3 +30,12 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[project.urls]
+Homepage = "https://github.com/satkr22/vamp-cli"
+Repository = "https://github.com/satkr22/vamp-cli"
