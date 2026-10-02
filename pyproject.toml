@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vamp-cli"
+version = "0.1.0"
+authors = [
+  { name = "Satyam Kumar", email = "satkr2208@gmail.com" }
+]
+description = "CLI based coding agent supporting many llm providers using litellm."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pydantic",
+    "rich",
+    "typer",
+    "pytest",
+]
