@@ -1,3 +1,3 @@
 # vamp-cli
 
-## CLI based coding agent supporting many llm providers using litellm.
+## CLI coding agent supporting many llm providers using litellm.
