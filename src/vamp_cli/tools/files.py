@@ -6,20 +6,98 @@ from vamp_cli.utils.error_codes import Error_codes
 from vamp_cli.utils.ignore import IgnoreMatcher
 
 class FileTools():
-    def __init__(self, workspace: Workspace, ignore: IgnoreMatcher) -> None:
+    def __init__(
+        self, 
+        workspace: Workspace, 
+        ignore: IgnoreMatcher
+    ) -> None:
         self.workspace = workspace
         self.ignore = ignore
+        
 
-    def list_dir(self, path: str, max_depth: int | None = None) -> list[tuple[str, str]]:
-            res_list = []
-            _path = self.workspace.safe_path(path)
+    def list_dir(
+        self, 
+        path: str, 
+        max_depth: int | None = None
+    ) -> dict[str, str | list[tuple[str, str]]]:
+        
+        res_list = []
+        _path = self.workspace.safe_path(path)
 
-            if _path == Error_codes.PATH_SCOPE_ERROR:
-                return [("error", Error_codes.PATH_SCOPE_ERROR.value)]
+        if _path == Error_codes.PATH_SCOPE_ERROR:
+            return {
+                "parent": path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value
+            }
+        
+        res_list = _walk_dir(root=path, ignore=self.ignore, max_depth=max_depth, res=res_list)
+        return {
+            "parent_path": path,
+            "list": res_list
+        }
+        
+
+    def read_file(
+        self, 
+        path: str, 
+        start: int | None = None, 
+        end: int | None = None
+    ) -> dict[str, str | int]:
+        _path = self.workspace.safe_path(path)
+        
+        if _path == Error_codes.PATH_SCOPE_ERROR:
+            return {
+                "parent": path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value
+            }
+        
+        if not Path(_path).is_file():
+            return {
+                "parent": path,
+                "error": Error_codes.NOT_FILE_ERROR.value
+            }
             
-            res_list = _walk_dir(root=path, ignore=self.ignore, max_depth=max_depth, res=res_list)
+        MAX_RANGE = 500
+        start_line = max(1, start) if start is not None else 1
+        
+        if end is not None:
+            end_line = min(max(end, start_line), start_line + MAX_RANGE - 1)
+        else:
+            end_line = start_line + MAX_RANGE - 1
             
-            return res_list
+        lines = []
+        try:
+            total_bytes = os.path.getsize(_path) 
+            total_lines = 0
+            
+            with open(_path, 'r', encoding='utf-8', errors='replace') as f:
+                for curr_line, line in enumerate(f, start=1):
+                    if start_line <= curr_line <= end_line:
+                        lines.append(f"{curr_line}: {line}")
+                    total_lines = curr_line 
+            
+            content = "".join(lines)
+            
+            return {
+                "path": path,
+                "start": start_line,
+                "end": min(end_line, total_lines) if total_lines > 0 else end_line,
+                "total_line": total_lines,
+                "content": content,
+                "file_size_bytes": total_bytes
+            }
+            
+        except FileNotFoundError:
+            return {
+                "parent": path,
+                "error": Error_codes.FILE_NOT_FOUND_ERROR.value
+            }
+        except Exception as e:
+            return {
+                "parent": path,
+                "error": f"Failed to read file: {str(e)}"
+            }
+
         
 def _walk_dir(
     root: str, 
