@@ -1,7 +1,9 @@
 import os
+import re
+import fnmatch
 from pathlib import Path
 from typing import Any
-from vamp_cli.workspace import Workspace
+from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.error_codes import Error_codes
 from vamp_cli.utils.ignore import IgnoreMatcher
 
@@ -98,6 +100,174 @@ class FileTools():
                 "error": f"Failed to read file: {str(e)}"
             }
 
+    def apply_search_replace(
+        self, 
+        file_path: str, 
+        search: str, 
+        replace: str
+    ) -> str:
+        if not os.path.exists(file_path):
+            return f"Error: File {file_path} not found."
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        
+        # Exact Match
+        exact_occurrences = content.count(search)
+        
+        if exact_occurrences == 1:
+            new_content = content.replace(search, replace)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            return "Success: Code replaced (Exact match)."
+            
+        if exact_occurrences > 1:
+            return (
+                f"Error: Search string found {exact_occurrences} times. "
+                "Include more surrounding lines to make it unique."
+            )
+
+        
+        # Fuzzy Whitespace Fallback if exact matche is zero
+        search_words = search.split()
+        if not search_words:
+            return "Error: Search string is empty or only contains whitespace."
+        
+        escaped_words = [re.escape(word) for word in search_words]
+        
+        fuzzy_pattern = r'\s+'.join(escaped_words)
+        
+        matches = list(re.finditer(fuzzy_pattern, content))
+        
+        if len(matches) == 0:
+            return (
+                "Error: Search string not found. Ensure you are matching "
+                "the exact characters of the existing code."
+            )
+                    
+        if len(matches) > 1:
+            return (
+                f"Error: Fuzzy match found {len(matches)} times. "
+                "Include more surrounding lines to make your search block unique."
+            )
+                    
+        # exact one match found
+        match = matches[0]
+        
+        new_content = content[:match.start()] + replace + content[match.end():]
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+            
+        return "Success: Code replaced (Fuzzy whitespace match)."
+
+    def file_search(
+        self, 
+        query: str, 
+        path: str = ".", 
+        max_results: int = 100
+    ) -> dict[str, Any]:
+        """
+        Finds files by filename or glob pattern like *.py, *test*, src/**/config.*
+        """
+        _path = self.workspace.safe_path(path)
+        if _path == Error_codes.PATH_SCOPE_ERROR:
+            return {"parent": path, "error": Error_codes.PATH_SCOPE_ERROR.value}
+
+        all_entries = _walk_dir(root=_path, ignore=self.ignore)
+        
+        matches = []
+        is_glob = any(char in query for char in ["*", "?", "[", "]"])
+        pattern = query if is_glob else f"*{query}*"
+
+        for entry_path, entry_type in all_entries:
+            if entry_type != "file":
+                continue
+
+            rel_path = Path(entry_path).relative_to(self.workspace.root).as_posix()
+            filename = Path(entry_path).name
+
+            # Match against either the filename or the full relative path
+            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(rel_path, pattern):
+                matches.append(rel_path)
+                if len(matches) >= max_results:
+                    break
+
+        return {
+            "query": query,
+            "count": len(matches),
+            "truncated": len(matches) >= max_results,
+            "matches": matches
+        }
+        
+    
+    def grep_search(
+        self,
+        query: str,
+        path: str = ".",
+        is_regex: bool = False,
+        file_pattern: str | None = None,
+        max_matches: int = 50
+    ) -> dict[str, Any]:
+        """
+        Searches for text or regex across file contents in the workspace.
+        Returns matching lines with file paths and line numbers.
+        """
+        _path = self.workspace.safe_path(path)
+        if _path == Error_codes.PATH_SCOPE_ERROR:
+            return {"parent": path, "error": Error_codes.PATH_SCOPE_ERROR.value}
+
+        all_entries = _walk_dir(root=_path, ignore=self.ignore)
+
+        if is_regex:
+            try:
+                pattern = re.compile(query)
+            except re.error as e:
+                return {"error": f"Invalid regex: {str(e)}"}
+        else:
+            pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+        results = []
+        total_matches = 0
+
+        for entry_path, entry_type in all_entries:
+            if entry_type != "file":
+                continue
+
+            rel_path = Path(entry_path).relative_to(self.workspace.root).as_posix()
+
+            if file_pattern and not fnmatch.fnmatch(Path(entry_path).name, file_pattern):
+                continue
+
+            # Skip binary files or unreadable encodings
+            try:
+                with open(entry_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line_num, line in enumerate(f, start=1):
+                        if pattern.search(line):
+                            results.append({
+                                "file": rel_path,
+                                "line": line_num,
+                                "content": line.rstrip()[:250]  # Cap long lines
+                            })
+                            total_matches += 1
+                            if total_matches >= max_matches:
+                                return {
+                                    "query": query,
+                                    "total_matches": total_matches,
+                                    "truncated": True,
+                                    "matches": results
+                                }
+            except (OSError, PermissionError):
+                continue
+
+        return {
+            "query": query,
+            "total_matches": total_matches,
+            "truncated": False,
+            "matches": results
+        }
+
         
 def _walk_dir(
     root: str, 
@@ -152,7 +322,7 @@ def _walk_dir(
     return res
 
 
-def _read_ignore_file(path: str) -> list[str]:
+def _read_ignore_file(path: str) -> list[str] | None:
     pattern_list: list[str] = []
     gitignore = Path(path).resolve() / ".gitignore"
     if gitignore.is_file():
@@ -164,4 +334,6 @@ def _read_ignore_file(path: str) -> list[str]:
                     continue
                 else:
                     pattern_list.append(line)
-    return pattern_list
+        return pattern_list
+    else:
+        return None

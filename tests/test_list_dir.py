@@ -1,4 +1,4 @@
-from vamp_cli.workspace import Workspace
+from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.tools.files import FileTools
 from pathlib import Path
