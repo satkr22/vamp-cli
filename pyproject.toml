@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name = "Satyam Kumar", email = "satkr2208@gmail.com" }
 ]
-description = "CLI coding agent supporting many llm providers using litellm."
+description = "CLI coding agent."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
