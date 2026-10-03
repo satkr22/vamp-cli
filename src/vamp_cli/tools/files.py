@@ -1,11 +1,13 @@
 import os
 import re
+import json
 import fnmatch
-from pathlib import Path
+import subprocess
 from typing import Any
+from pathlib import Path
+from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.error_codes import Error_codes
-from vamp_cli.utils.ignore import IgnoreMatcher
 
 class FileTools():
     def __init__(
@@ -32,7 +34,7 @@ class FileTools():
                 "error": Error_codes.PATH_SCOPE_ERROR.value
             }
         
-        res_list = _walk_dir(root=path, ignore=self.ignore, max_depth=max_depth, res=res_list)
+        res_list = _walk_dir(root=_path, ignore=self.ignore, max_depth=max_depth, res=res_list)
         return {
             "parent_path": path,
             "list": res_list
@@ -71,6 +73,9 @@ class FileTools():
         try:
             total_bytes = os.path.getsize(_path) 
             total_lines = 0
+            # TODO: v2: cache file metadata / line count
+            # invalidate cache after mutations
+            # possibly use more efficient random-access line indexing
             
             with open(_path, 'r', encoding='utf-8', errors='replace') as f:
                 for curr_line, line in enumerate(f, start=1):
@@ -99,40 +104,126 @@ class FileTools():
                 "parent": path,
                 "error": f"Failed to read file: {str(e)}"
             }
+    
+    def write_file(
+        self,
+        path: str,
+        content: str,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Creates a new file or overwrites an existing file.
+
+        If overwrite=False, an existing file is not modified.
+        If overwrite=True, the entire file is replaced.
+        """
+        _path = self.workspace.safe_path(path)
+
+        if _path == Error_codes.PATH_SCOPE_ERROR:
+            return {
+                "parent": path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value,
+            }
+
+        file_path = Path(_path)
+
+        if file_path.exists() and file_path.is_dir():
+            return {
+                "path": path,
+                "success": False,
+                "error": "Path is a directory, not a file.",
+            }
+
+        was_existing = file_path.exists()
+
+        if was_existing and not overwrite:
+            return {
+                "path": path,
+                "success": False,
+                "error": (
+                    "File already exists. "
+                    "Set overwrite=true to replace the entire file."
+                ),
+            }
+
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            file_path.write_text(
+                content,
+                encoding="utf-8",
+            )
+
+            return {
+                "path": path,
+                "success": True,
+                "created": not was_existing,
+                "overwritten": was_existing,
+                "bytes_written": len(content.encode("utf-8")),
+            }
+
+        except OSError as e:
+            return {
+                "path": path,
+                "success": False,
+                "error": f"Failed to write file: {str(e)}",
+            }
 
     def apply_search_replace(
         self, 
         file_path: str, 
         search: str, 
         replace: str
-    ) -> str:
+    ) -> dict[str, Any]:
+        
         if not os.path.exists(file_path):
-            return f"Error: File {file_path} not found."
+            return {
+                "path": file_path,
+                "success": True,
+                "error": f"File {file_path} not found."
+            }
 
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            
-        
-        # Exact Match
-        exact_occurrences = content.count(search)
-        
-        if exact_occurrences == 1:
-            new_content = content.replace(search, replace)
+                
+        # exact match
+        first = content.find(search)
+
+        if first != -1:
+            second = content.find(
+                search,
+                first + len(search),
+            )
+            if second != -1:
+                return {
+                    "path": file_path,
+                    "success": False,
+                    "error": (
+                        "Search string found multiple times. "
+                        "Include more surrounding code to make it unique."
+                    ),
+                }
+            new_content = (
+                content[:first]
+                + replace
+                + content[first + len(search):]
+            )
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            return "Success: Code replaced (Exact match)."
-            
-        if exact_occurrences > 1:
-            return (
-                f"Error: Search string found {exact_occurrences} times. "
-                "Include more surrounding lines to make it unique."
-            )
+            return {
+                "path": file_path,
+                "success": True,
+                "match_type": "exact"
+            }
 
-        
         # Fuzzy Whitespace Fallback if exact matche is zero
         search_words = search.split()
         if not search_words:
-            return "Error: Search string is empty or only contains whitespace."
+            return {
+                "path": file_path,
+                "success": True,
+                "error": "Search string is empty or only contains whitespace."
+            }
         
         escaped_words = [re.escape(word) for word in search_words]
         
@@ -141,16 +232,20 @@ class FileTools():
         matches = list(re.finditer(fuzzy_pattern, content))
         
         if len(matches) == 0:
-            return (
-                "Error: Search string not found. Ensure you are matching "
+            return {
+                "path": file_path,
+                "success": True,
+                "error": "Search string not found. Ensure you are matching "
                 "the exact characters of the existing code."
-            )
+            }
                     
         if len(matches) > 1:
-            return (
-                f"Error: Fuzzy match found {len(matches)} times. "
-                "Include more surrounding lines to make your search block unique."
-            )
+            return {
+                "path": file_path,
+                "success": True,
+                "error": f"Fuzzy match found {len(matches)} times. "
+                    "Include more surrounding lines to make your search block unique."
+            }
                     
         # exact one match found
         match = matches[0]
@@ -160,112 +255,206 @@ class FileTools():
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
             
-        return "Success: Code replaced (Fuzzy whitespace match)."
+        return {
+            "path": file_path,
+            "success": True,
+            "match_type": "whitespace"
+        }
 
     def file_search(
-        self, 
-        query: str, 
-        path: str = ".", 
-        max_results: int = 100
+        self,
+        query: str,
+        path: str = ".",
+        max_results: int = 100,
     ) -> dict[str, Any]:
         """
-        Finds files by filename or glob pattern like *.py, *test*, src/**/config.*
+        Finds files by filename or glob pattern like "config", "*.py", "*test*", "src/**/config.*"
+        Uses ripgrep's file listing, which respects .gitignore
         """
         _path = self.workspace.safe_path(path)
+
         if _path == Error_codes.PATH_SCOPE_ERROR:
-            return {"parent": path, "error": Error_codes.PATH_SCOPE_ERROR.value}
+            return {
+                "parent": path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value,
+            }
 
-        all_entries = _walk_dir(root=_path, ignore=self.ignore)
-        
-        matches = []
         is_glob = any(char in query for char in ["*", "?", "[", "]"])
-        pattern = query if is_glob else f"*{query}*"
 
-        for entry_path, entry_type in all_entries:
-            if entry_type != "file":
-                continue
+        if is_glob:
+            glob_pattern = query
+        else:
+            glob_pattern = f"*{query}*"
 
-            rel_path = Path(entry_path).relative_to(self.workspace.root).as_posix()
-            filename = Path(entry_path).name
+        cmd = [
+            "rg",
+            "--files",
+        ]
 
-            # Match against either the filename or the full relative path
-            if fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(rel_path, pattern):
-                matches.append(rel_path)
-                if len(matches) >= max_results:
-                    break
+        cmd.extend([
+            "--glob",
+            glob_pattern,
+            str(_path),
+        ])
+
+        workspace_root = self.workspace.root
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            return {
+                "error": (
+                    "ripgrep (rg) command not found. "
+                    "Please install ripgrep."
+                )
+            }
+
+        if result.returncode == 2:
+            return {
+                "error": f"rg execution failed: {result.stderr.strip()}"
+            }
+
+        matches: list[str] = []
+
+        for line in result.stdout.splitlines():
+            if len(matches) >= max_results:
+                break
+            try:
+                rel_path = Path(line).resolve().relative_to(workspace_root).as_posix()
+            except ValueError:
+                rel_path = Path(line).as_posix()
+
+            matches.append(rel_path)
 
         return {
             "query": query,
             "count": len(matches),
             "truncated": len(matches) >= max_results,
-            "matches": matches
+            "matches": matches,
         }
         
-    
+
     def grep_search(
         self,
         query: str,
         path: str = ".",
         is_regex: bool = False,
         file_pattern: str | None = None,
-        max_matches: int = 50
+        max_matches: int = 50,
     ) -> dict[str, Any]:
         """
-        Searches for text or regex across file contents in the workspace.
+        Searches for text or regex across file contents using ripgrep (rg).
+
+        The path may be a file or directory.
+
         Returns matching lines with file paths and line numbers.
         """
         _path = self.workspace.safe_path(path)
+
         if _path == Error_codes.PATH_SCOPE_ERROR:
-            return {"parent": path, "error": Error_codes.PATH_SCOPE_ERROR.value}
+            return {
+                "parent": path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value,
+            }
 
-        all_entries = _walk_dir(root=_path, ignore=self.ignore)
+        cmd = [
+            "rg",
+            "--json",
+            "-n",
+        ]
 
-        if is_regex:
-            try:
-                pattern = re.compile(query)
-            except re.error as e:
-                return {"error": f"Invalid regex: {str(e)}"}
-        else:
-            pattern = re.compile(re.escape(query), re.IGNORECASE)
+        if not is_regex:
+            cmd.extend(["-F", "-i"])
 
-        results = []
-        total_matches = 0
+        if file_pattern:
+            cmd.extend(["--glob", file_pattern])
 
-        for entry_path, entry_type in all_entries:
-            if entry_type != "file":
-                continue
+        cmd.extend([
+            "--",
+            query,
+            str(_path),
+        ])
 
-            rel_path = Path(entry_path).relative_to(self.workspace.root).as_posix()
+        results: list[dict[str, str]] = []
+        workspace_root = self.workspace.root
+        try:
+            with subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ) as process:
+                
+                assert process.stdout is not None
+                
+                for line in process.stdout:
+                    if len(results) >= max_matches:
+                        process.kill()
+                        break
 
-            if file_pattern and not fnmatch.fnmatch(Path(entry_path).name, file_pattern):
-                continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
 
-            # Skip binary files or unreadable encodings
-            try:
-                with open(entry_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line_num, line in enumerate(f, start=1):
-                        if pattern.search(line):
-                            results.append({
-                                "file": rel_path,
-                                "line": line_num,
-                                "content": line.rstrip()[:250]  # Cap long lines
-                            })
-                            total_matches += 1
-                            if total_matches >= max_matches:
-                                return {
-                                    "query": query,
-                                    "total_matches": total_matches,
-                                    "truncated": True,
-                                    "matches": results
-                                }
-            except (OSError, PermissionError):
-                continue
+                    if event.get("type") != "match":
+                        continue
 
+                    data = event.get("data", {})
+
+                    path_data = data.get("path", {})
+                    line_number = data.get("line_number")
+
+                    file_path = path_data.get("text")
+
+                    if not file_path or line_number is None:
+                        continue
+
+                    try:
+                        rel_path = Path(file_path).resolve().relative_to(workspace_root).as_posix()
+                    except ValueError:
+                        rel_path = file_path
+
+                    content_data = data.get("lines", {})
+                    content = content_data.get("text", "")
+
+                    results.append({
+                        "file": rel_path,
+                        "line": line_number,
+                        "content": content.rstrip()[:250],
+                    })
+
+                stderr = process.stderr.read() if process.stderr else ""
+                
+                # Make sure the process has finished.
+                process.wait()
+                
+        except FileNotFoundError:
+            return {
+                "error": (
+                    "ripgrep (rg) command not found. "
+                    "Please install ripgrep."
+                )
+            }
+        except Exception as e:
+            return {
+                "error": f"Failed processing ripgrep output: {str(e)}"
+            }
+               
+        if process.returncode == 2:
+            return {
+                "error": f"rg execution failed: {stderr.strip()}"
+            }
+            
         return {
             "query": query,
-            "total_matches": total_matches,
-            "truncated": False,
-            "matches": results
+            "total_matches": len(results),
+            "truncated": len(results) >= max_matches,
+            "matches": results,
         }
 
         
