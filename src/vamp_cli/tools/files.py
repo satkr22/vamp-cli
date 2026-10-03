@@ -8,15 +8,18 @@ from pathlib import Path
 from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.error_codes import Error_codes
+from vamp_cli.tools.diagnostic import DiagnosticTools
 
 class FileTools():
     def __init__(
         self, 
         workspace: Workspace, 
-        ignore: IgnoreMatcher
+        ignore: IgnoreMatcher,
+        diagnostic: DiagnosticTools
     ) -> None:
         self.workspace = workspace
         self.ignore = ignore
+        self.diagnostic = diagnostic
         
 
     def list_dir(
@@ -153,14 +156,25 @@ class FileTools():
                 content,
                 encoding="utf-8",
             )
-
-            return {
+            
+            syntax_status = self.diagnostic.check_file_syntax(str(file_path))    
+                        
+            response = {
                 "path": path,
                 "success": True,
                 "created": not was_existing,
                 "overwritten": was_existing,
                 "bytes_written": len(content.encode("utf-8")),
             }
+            
+            if not syntax_status["valid"]:
+                response["syntax_warning"] = (
+                    "Modification was applied, but created a syntax error: "
+                    f"{syntax_status['diagnostics'][0]['message']} on line {syntax_status['diagnostics'][0]['line']}."
+                )
+            
+            return response
+
 
         except OSError as e:
             return {
@@ -210,11 +224,22 @@ class FileTools():
             )
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            return {
+            
+            syntax_status = self.diagnostic.check_file_syntax(file_path)    
+            
+            response =  {
                 "path": file_path,
                 "success": True,
                 "match_type": "exact"
             }
+            
+            if not syntax_status["valid"]:
+                response["syntax_warning"] = (
+                    "Modification was applied, but created a syntax error: "
+                    f"{syntax_status['diagnostics'][0]['message']} on line {syntax_status['diagnostics'][0]['line']}."
+                )
+            
+            return response
 
         # Fuzzy Whitespace Fallback if exact matche is zero
         search_words = search.split()
@@ -255,11 +280,23 @@ class FileTools():
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
             
-        return {
+        syntax_status = self.diagnostic.check_file_syntax(file_path)    
+                    
+        response =  {
             "path": file_path,
             "success": True,
-            "match_type": "whitespace"
+            "match_type": "exact"
         }
+        
+        if not syntax_status["valid"]:
+            response["syntax_warning"] = (
+                "Modification was applied, but created a syntax error: "
+                f"{syntax_status['diagnostics'][0]['message']} on line {syntax_status['diagnostics'][0]['line']}."
+            )
+            
+        return response
+    
+    
 
     def file_search(
         self,
@@ -338,7 +375,7 @@ class FileTools():
         }
         
 
-    def grep_search(
+    def ripgrep_search(
         self,
         query: str,
         path: str = ".",
