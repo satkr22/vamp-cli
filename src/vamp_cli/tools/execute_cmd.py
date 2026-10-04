@@ -8,7 +8,7 @@ class ExecuteCommandTool:
     def execute(
         self,
         command: str,
-        cwd: str = "/workspace",
+        cwd: str = ".",
     ):
         return self.shell.execute(
             command=command,
