@@ -1,0 +1,50 @@
+models:
+  qwen:
+    model: qwen3-coder-plus
+    api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks:
+      - openai
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      context_window: 128000
+
+  openai:
+    model: gpt-5.6-luna
+    api_key_env: OPENAI_API_KEY
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      context_window: 128000
+
+profiles:
+  default:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - apply_search_replace
+      - write_file
+      - file_search
+      - ripgrep_search
+      - execute_command
+    prompt: prompts/agent.md
+
+default_profile: default
+

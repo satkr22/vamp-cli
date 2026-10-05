@@ -5,7 +5,7 @@ class ExecuteCommandTool:
     def __init__(self, shell: Shell):
         self.shell = shell
 
-    def execute(
+    def execute_command(
         self,
         command: str,
         cwd: str = ".",
