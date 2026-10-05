@@ -33,6 +33,7 @@ class ModelConfig(BaseModel):
 
     params: dict[str, Any] = Field(default_factory=dict)
     fallbacks: list[str] = Field(default_factory=list)
+    adapter: str = "default"
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
 
 

@@ -3,6 +3,7 @@ models:
     model: qwen3-coder-plus
     api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
     api_key_env: DASHSCOPE_API_KEY
+    adapter: default
     params:
       temperature: 0.2
       max_tokens: 8192
@@ -20,6 +21,7 @@ models:
   openai:
     model: gpt-5.6-luna
     api_key_env: OPENAI_API_KEY
+    adapter: default
     params:
       temperature: 0.2
       max_tokens: 8192
