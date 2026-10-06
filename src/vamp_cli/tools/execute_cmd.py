@@ -2,8 +2,8 @@ from vamp_cli.sandbox.terminal import Terminal
 
 class ExecuteCommandTool:
 
-    def __init__(self, shell: Terminal):
-        self.shell = shell
+    def __init__(self, terminal: Terminal):
+        self.shell = terminal
 
     def execute_command(
         self,

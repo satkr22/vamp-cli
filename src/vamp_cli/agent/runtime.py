@@ -64,10 +64,9 @@ class AgentRuntime:
         # OpenAI-format schemas — for binding into the router.
         tool_schemas = self._tool_registry.get_openai_tools(profile_cfg.tools)
         
-        system_prompt = self._prompt_store.load(
-            profile_cfg.prompt
-        )
-        
+   
+        system_prompt = self._prompt_store.load(profile_cfg.prompt)
+
         model = self._model_router.get(
             profile_cfg.model,
             tools=tool_schemas,        # openai compatiable tool schema dict
@@ -99,6 +98,10 @@ class AgentRuntime:
             f"Role '{role}' is not configured and no 'default' profile exists"
         )
     
+
+
+
+
     
 '''
 at call site:

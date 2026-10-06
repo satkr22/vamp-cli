@@ -44,7 +44,7 @@ class ProfileConfig(BaseModel):
 
     model: str
     tools: list[str] = Field(default_factory=list)
-    prompt: str | None = None
+    prompt: str
 
 
 class AppConfig(BaseModel):
