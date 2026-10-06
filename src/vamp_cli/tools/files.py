@@ -190,14 +190,23 @@ class FileTools():
         replace: str
     ) -> dict[str, Any]:
         
-        if not os.path.exists(file_path):
+        path = self.workspace.safe_path(file_path)
+        
+        if path == Error_codes.PATH_SCOPE_ERROR:
+            return {
+                "parent": file_path,
+                "error": Error_codes.PATH_SCOPE_ERROR.value,
+            }
+            
+        
+        if not os.path.exists(path):
             return {
                 "path": file_path,
-                "success": True,
+                "success": False,
                 "error": f"File {file_path} not found."
             }
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
                 
         # exact match
@@ -210,7 +219,7 @@ class FileTools():
             )
             if second != -1:
                 return {
-                    "path": file_path,
+                    "path": path,
                     "success": False,
                     "error": (
                         "Search string found multiple times. "
@@ -222,13 +231,13 @@ class FileTools():
                 + replace
                 + content[first + len(search):]
             )
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
             
-            syntax_status = self.diagnostic.check_file_syntax(file_path)    
+            syntax_status = self.diagnostic.check_file_syntax(path) 
             
             response =  {
-                "path": file_path,
+                "path": path,
                 "success": True,
                 "match_type": "exact"
             }
@@ -245,8 +254,8 @@ class FileTools():
         search_words = search.split()
         if not search_words:
             return {
-                "path": file_path,
-                "success": True,
+                "path": path,
+                "success": False,
                 "error": "Search string is empty or only contains whitespace."
             }
         
@@ -258,16 +267,16 @@ class FileTools():
         
         if len(matches) == 0:
             return {
-                "path": file_path,
-                "success": True,
+                "path": path,
+                "success": False,
                 "error": "Search string not found. Ensure you are matching "
                 "the exact characters of the existing code."
             }
                     
         if len(matches) > 1:
             return {
-                "path": file_path,
-                "success": True,
+                "path": path,
+                "success": False,
                 "error": f"Fuzzy match found {len(matches)} times. "
                     "Include more surrounding lines to make your search block unique."
             }
@@ -277,15 +286,15 @@ class FileTools():
         
         new_content = content[:match.start()] + replace + content[match.end():]
         
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             f.write(new_content)
             
-        syntax_status = self.diagnostic.check_file_syntax(file_path)    
+        syntax_status = self.diagnostic.check_file_syntax(path)    
                     
         response =  {
-            "path": file_path,
+            "path": path,
             "success": True,
-            "match_type": "exact"
+            "match_type": "exact_with_fuzzy_whitespace"
         }
         
         if not syntax_status["valid"]:
