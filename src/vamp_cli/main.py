@@ -6,7 +6,7 @@ from vamp_cli.llm.router import ModelRouter
 from vamp_cli.llm.router import ModelRouter
 from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.prompts.prompts import PromptStore
-from vamp_cli.agent.runtime import AgentRuntime
+from vamp_cli.agent.runtime.runtime import AgentRuntime
 from vamp_cli.llm.adapter_registry import AdapterRegistry
 
 from vamp_cli.tools.files import FileTools
