@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from vamp_cli.config.schema import AppConfig, ModelConfig
 
-DEFAULT_CONFIG_PATH = "vamp_cli/config.yaml"
+DEFAULT_CONFIG_PATH = "config.yaml"
 
 class ConfigError(ValueError):
     """Raised when configuration is structurally invalid or incomplete."""
