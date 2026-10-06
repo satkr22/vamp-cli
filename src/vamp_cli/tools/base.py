@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from abc import ABC
-from typing import Any, Callable, Awaitable
+from typing import Any
+
+
 
 class InputSchema(BaseModel):
     type: str
@@ -9,17 +11,29 @@ class InputSchema(BaseModel):
     additionalProperties: bool
 
 
+
 class Tools(ABC):
     name: str
     description: str
     input_schema: InputSchema
-    
+
     def schema(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
         }
-    
-    def run(self, **kwargs) -> str:
-        ...
+
+    def to_openai_tool(self) -> dict[str, Any]:
+        """OpenAI function-calling shape accepted by ChatLiteLLM.bind_tools()."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.input_schema.model_dump(),
+            },
+        }
+
+    def run(self, **kwargs: Any) -> str:
+        raise NotImplementedError

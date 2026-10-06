@@ -213,10 +213,18 @@ class ModelRouter:
 
         return ChatLiteLLM(**kwargs)
 
+
     @staticmethod
     def _tool_key(tool: Any) -> str:
-        """Stable-enough cache identity for common LangChain tool objects."""
+        # OpenAI-format dict
+        if isinstance(tool, dict):
+            fn = tool.get("function") or {}
+            name = fn.get("name") or tool.get("name")
+            if name:
+                return str(name)
+            return repr(tool)
 
+        # Tools object / BaseTool / callable
         name = getattr(tool, "name", None)
         if name:
             return str(name)
@@ -227,3 +235,5 @@ class ModelRouter:
             return f"{module or ''}:{qualname}"
 
         return repr(tool)
+
+
