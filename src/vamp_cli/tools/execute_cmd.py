@@ -1,8 +1,8 @@
-from vamp_cli.sandbox.shell import Shell
+from vamp_cli.sandbox.terminal import Terminal
 
 class ExecuteCommandTool:
 
-    def __init__(self, shell: Shell):
+    def __init__(self, shell: Terminal):
         self.shell = shell
 
     def execute_command(

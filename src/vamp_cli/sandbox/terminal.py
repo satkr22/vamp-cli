@@ -32,7 +32,7 @@ def _truncate_output(
     return output, True
 
 
-class Shell:
+class Terminal:
     """
     Shell interface exposed to the agent.
     """
