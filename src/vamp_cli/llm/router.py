@@ -138,7 +138,7 @@ class ModelRouter:
             + ([f"usage:{usage_context}"] if usage_context else []),
         )
         
-        # 4. Adapt THIS model branch
+        # 4. Adapt this primary_runnable as per selected model quirks
         adapter = self._adapters.get(cfg.adapter)
 
         primary_runnable = adapter.adapt(

@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
     jq \
+    ripgrep \
+    fd-find \
+    python3-pytest \
     build-essential \
     ca-certificates \
     python3 \

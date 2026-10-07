@@ -23,9 +23,6 @@ class UsageSnapshot:
 
 class UsageTracker:
     """Thread-safe in-process usage accumulator.
-
-    It intentionally lives in router.py for now. It can later be extracted into
-    llm/usage.py without changing ModelRouter's public interface.
     """
 
     def __init__(self) -> None:

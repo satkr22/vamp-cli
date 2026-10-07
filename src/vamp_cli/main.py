@@ -8,6 +8,7 @@ from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.prompts.prompts import PromptStore
 from vamp_cli.agent.runtime.runtime import AgentRuntime
 from vamp_cli.llm.adapter_registry import AdapterRegistry
+from vamp_cli.llm.usage import UsageTracker, _UsageCallback
 
 from vamp_cli.tools.files import FileTools
 from vamp_cli.tools.execute_cmd import ExecuteCommandTool
@@ -17,7 +18,6 @@ from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.tools.diagnostic import DiagnosticTools
 from vamp_cli.sandbox.terminal import Terminal
-from vamp_cli.sandbox.base import Sandbox
 from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 
 from vamp_cli.agent.graph import create_graph
@@ -110,10 +110,11 @@ def main():
     result = graph.invoke({
         "messages": [
             HumanMessage(
-                content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
+                # content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
                 # content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
                 # content="can you tell me how sandbox is working for this coding agent project??"
                 # content="List the files in this repository."
+                content="read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
             )
         ]
     })
@@ -121,6 +122,9 @@ def main():
     for message in result["messages"]:
         # print(type(message))
         print(message)
+        
+    usage_dict = agent_runtime._model_router.usage()
+    print(usage_dict)
         
     sandbox.stop()
         

@@ -168,6 +168,8 @@ def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
     If it doesn't, it dynamically creates a Dockerfile with essential 
     coding utilities, builds the image, and cleans up the temporary file.
     """
+    docker_file = "src/vamp_cli/sandbox/Dockerfile"
+    
     try:
         # 1. Check if the image already exists in the local Docker daemon
         subprocess.run(
@@ -182,8 +184,7 @@ def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
     except subprocess.CalledProcessError:
         # 2. Image does not exist -> Start the automated build process
         print(f"Image '{image_tag}' not found locally. Initiating automatic environment build...")
-
-        docker_file = "src/vamp_cli/sandbox/Dockerfile"
+        
         try:  
             print("Downloading and configuring development runtimes (Python, Node, Git)...")
             
@@ -198,5 +199,5 @@ def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
             return True
             
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to auto-compile the coding sandbox image architecture: {e.stderr}")
+            raise RuntimeError(f"Failed to auto-compile the coding sandbox image architecture: {e}")
         
