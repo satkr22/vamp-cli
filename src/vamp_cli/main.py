@@ -20,6 +20,12 @@ from vamp_cli.sandbox.terminal import Terminal
 from vamp_cli.sandbox.base import Sandbox
 from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 
+from vamp_cli.agent.graph import create_graph
+from vamp_cli.agent.roles import AgentRole
+
+from langchain_core.messages import HumanMessage
+
+
 log = logging.getLogger(__name__)
 
 PROJECT_DIR = str(Path.cwd())
@@ -27,11 +33,13 @@ PROJECT_DIR = str(Path.cwd())
 def build_startup():
     
     # --- services ---------------------------------------------------------
+    
     workspace = Workspace(root=PROJECT_DIR)
     ignore = IgnoreMatcher(repo_root=str(workspace.root))
     diagnostic = DiagnosticTools(workspace=workspace)
     sandbox_config = SandboxConfig()
     d_sandbox = DockerSandbox(workspace, sandbox_config)
+    d_sandbox.start()
     terminal = Terminal(sandbox=d_sandbox)
     
     file_tools = FileTools(
@@ -59,16 +67,16 @@ def build_startup():
 
     log.info("Registered %d tools: %s", len(registry), registry.list_tool_names())
     
-    return registry
+    return registry, d_sandbox
 
 
-def create_runtime() -> AgentRuntime:
+def create_runtime():
 
-        config = load_config(path="config.yaml")
+        config = load_config(path="src/vamp_cli/config/config.yaml")
         
         adapter = AdapterRegistry()
 
-        tool_registry = build_startup()
+        tool_registry, sandbox = build_startup()
 
         prompt_store = PromptStore(hot_reload=True)
 
@@ -82,4 +90,40 @@ def create_runtime() -> AgentRuntime:
             model_router=model_router,
             tool_registry=tool_registry,
             prompt_store=prompt_store,
-        )
+        ), tool_registry, sandbox
+        
+def main():
+    agent_runtime, tool_registry, sandbox = create_runtime()     
+    
+    agent_profile = agent_runtime.resolve(AgentRole.DEFAULT)
+    tool_list = []
+    for tool in agent_profile.tools.keys():
+        tool_list.append(tool)
+    tools = tool_registry.get_tool_list(tool_list)
+
+        
+    graph = create_graph(
+        model=agent_profile.model,
+        tool_registry=tool_registry
+    )
+    
+    result = graph.invoke({
+        "messages": [
+            HumanMessage(
+                content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
+                # content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
+                # content="can you tell me how sandbox is working for this coding agent project??"
+                # content="List the files in this repository."
+            )
+        ]
+    })
+    
+    for message in result["messages"]:
+        # print(type(message))
+        print(message)
+        
+    sandbox.stop()
+        
+        
+if __name__ == "__main__":
+    main()

@@ -3,10 +3,8 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.outputs import LLMResult
 from langchain_core.runnables import Runnable
 from langchain_litellm import ChatLiteLLM
 

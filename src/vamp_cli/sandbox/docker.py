@@ -1,4 +1,7 @@
+import os
 import uuid
+import time
+import platform
 import posixpath
 from pathlib import PurePosixPath
 import subprocess
@@ -20,6 +23,9 @@ class DockerSandbox(Sandbox):
         self.container_name = f"vamp-sandbox-{uuid.uuid4().hex[:8]}"
 
     def start(self):
+        
+        ensure_sandbox_image_exists(self.config.image)
+        
         command = [
             "docker",
             "run",
@@ -43,6 +49,11 @@ class DockerSandbox(Sandbox):
             "-w",
             "/workspace",
         ]
+        
+        # Fix Linux/WSL file ownership issues
+        if platform.system().lower() == "linux":
+            # Avoid using root inside the container so host files don't lock up
+            command.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
 
         if not self.config.network_enabled:
             command.extend([
@@ -55,13 +66,16 @@ class DockerSandbox(Sandbox):
             "sleep",
             "infinity",
         ])
-
-        subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Docker container startup failed.\nError:\n{e.stderr}")
         
         
     def execute(
@@ -142,3 +156,47 @@ def _resolve_cwd(cwd: str) -> str:
         )
 
     return str(normalized)
+
+
+import os
+import subprocess
+import uuid
+
+def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
+    """
+    Checks if the specified Docker image exists locally. 
+    If it doesn't, it dynamically creates a Dockerfile with essential 
+    coding utilities, builds the image, and cleans up the temporary file.
+    """
+    try:
+        # 1. Check if the image already exists in the local Docker daemon
+        subprocess.run(
+            ["docker", "image", "inspect", image_tag],
+            check=True, 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
+        # Image exists, return immediately without doing anything
+        return True
+        
+    except subprocess.CalledProcessError:
+        # 2. Image does not exist -> Start the automated build process
+        print(f"Image '{image_tag}' not found locally. Initiating automatic environment build...")
+
+        docker_file = "src/vamp_cli/sandbox/Dockerfile"
+        try:  
+            print("Downloading and configuring development runtimes (Python, Node, Git)...")
+            
+            # Execute the docker build command
+            # (Remove stdout=subprocess.DEVNULL if you want the user to see the progress bar)
+            subprocess.run(
+                ["docker", "build", "-t", image_tag, "-f", docker_file, "."],
+                check=True,
+                stdout=subprocess.DEVNULL
+            )
+            print(f"Successfully compiled sandbox environment: {image_tag}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to auto-compile the coding sandbox image architecture: {e.stderr}")
+        

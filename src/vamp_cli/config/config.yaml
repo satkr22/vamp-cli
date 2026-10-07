@@ -1,7 +1,7 @@
 models:
   qwen:
-    model: qwen3-coder-plus
-    api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: dashscope/deepseek-v4.1-flash
+    api_base: https://ws-n7c4pdh4ldno9hkc.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: DASHSCOPE_API_KEY
     adapter: default
     params:
@@ -9,14 +9,15 @@ models:
       max_tokens: 8192
       max_retries: 2
       streaming: true
-    fallbacks:
-      - openai
+    fallbacks: []
+      # - openai
     capabilities:
       supports_tools: true
       supports_parallel_tools: false
       supports_streaming: true
       supports_reasoning: true
       context_window: 128000
+
 
   openai:
     model: gpt-5.6-luna
