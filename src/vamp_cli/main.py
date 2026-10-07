@@ -99,8 +99,6 @@ def main():
     tool_list = []
     for tool in agent_profile.tools.keys():
         tool_list.append(tool)
-    tools = tool_registry.get_tool_list(tool_list)
-
         
     graph = create_graph(
         model=agent_profile.model,
