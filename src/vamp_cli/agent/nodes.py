@@ -15,7 +15,8 @@ def create_agent_node(model: Runnable):
         response = model.invoke(state["messages"])
 
         return {
-            "messages": [response]
+            "messages": [response],
+            "iteration": state["iteration"] + 1
         }
 
     return agent_node

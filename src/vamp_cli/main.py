@@ -22,6 +22,7 @@ from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
+from vamp_cli.agent.status import AgentStatus
 
 from langchain_core.messages import HumanMessage
 
@@ -111,7 +112,9 @@ def main():
                 # content="List the files in this repository."
                 content="read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
             )
-        ]
+        ],
+        "task": "List the files in this repository.",
+        "iteration": 0,
     })
     
     for message in result["messages"]:
