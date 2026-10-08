@@ -1,3 +1,5 @@
+from typing import Literal
+
 from langgraph.graph import StateGraph, START, END
 
 from vamp_cli.agent.state import AgentState
@@ -6,14 +8,14 @@ from vamp_cli.agent.nodes import create_tool_node
 from vamp_cli.tools.registry import ToolRegistry
 
 
-def should_continue(state: AgentState):
+def should_continue(state: AgentState) -> Literal["tools", "__end__"]:
 
     last_message = state["messages"][-1]
 
     if last_message.tool_calls: # type: ignore
         return "tools"
 
-    return END
+    return "__end__"
 
 
 def create_graph(model, tool_registry: ToolRegistry):
@@ -34,7 +36,7 @@ def create_graph(model, tool_registry: ToolRegistry):
         should_continue,
         {
             "tools": "tools",
-            END: END,
+            "__end__": END,
         },
     )
 

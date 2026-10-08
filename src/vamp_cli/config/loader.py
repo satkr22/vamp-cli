@@ -104,18 +104,27 @@ def _validate_references(config: AppConfig) -> None:
 def _check_fallback_cycles(config: AppConfig) -> None:
     visiting: set[str] = set()
     visited: set[str] = set()
+    path: list[str] = []  # tracks the exact order of traversal
 
     def visit(model_name: str) -> None:
         if model_name in visiting:
+            cycle_start_idx = path.index(model_name)
+            cycle_path = path[cycle_start_idx:] + [model_name]
+            path_str = " -> ".join(cycle_path)
             raise ConfigError(
                 f"Fallback cycle detected involving model '{model_name}'."
+                f"Fallback cycle: {path_str}"
             )
         if model_name in visited:
             return
 
         visiting.add(model_name)
+        path.append(model_name)  # push to history stack
+        
         for fallback in config.models[model_name].fallbacks:
             visit(fallback)
+            
+        path.pop() # pop from history stack
         visiting.remove(model_name)
         visited.add(model_name)
 

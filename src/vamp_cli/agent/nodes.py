@@ -29,10 +29,10 @@ def create_tool_node(tool_registry: ToolRegistry):
 
         last_message = state["messages"][-1]
         
-        print(type(last_message))
-        print(last_message)
+        # print(type(last_message))
+        # print(last_message)
 
-        tool_messages = []
+        tool_messages:list[ToolMessage] = []
 
         for tool_call in last_message.tool_calls: # type: ignore
 
@@ -54,6 +54,7 @@ def create_tool_node(tool_registry: ToolRegistry):
                     content=[result],
                     tool_call_id=tool_call["id"],
                     name=tool_name,
+                    status="success" if isinstance(result, str) else "error"
                 )
             )
 
