@@ -96,9 +96,6 @@ def main():
     agent_runtime, tool_registry, sandbox = create_runtime()     
     
     agent_profile = agent_runtime.resolve(AgentRole.DEFAULT)
-    tool_list = []
-    for tool in agent_profile.tools.keys():
-        tool_list.append(tool)
         
     graph = create_graph(
         model=agent_profile.model,
