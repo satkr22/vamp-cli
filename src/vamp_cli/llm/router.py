@@ -12,6 +12,7 @@ from vamp_cli.config.loader import get_api_key
 from vamp_cli.config.schema import AppConfig, ModelCapabilities, ModelConfig
 from vamp_cli.llm.adapter_registry import AdapterRegistry
 from vamp_cli.llm.usage import UsageTracker, UsageSnapshot, _UsageCallback
+from vamp_cli.llm.debug_callbacks import DumpPayloadCallback
 
 log = logging.getLogger(__name__)
 
@@ -133,7 +134,10 @@ class ModelRouter:
         
         # 3. Attach usage tracking to the primary
         primary_runnable: Runnable[Any, Any] = primary_bound.with_config(
-            callbacks=[_UsageCallback(self._usage, model_name, usage_context)],
+            callbacks=[
+                _UsageCallback(self._usage, model_name, usage_context),
+                DumpPayloadCallback(),
+            ],
             tags=[f"llm-model:{model_name}"]
             + ([f"usage:{usage_context}"] if usage_context else []),
         )

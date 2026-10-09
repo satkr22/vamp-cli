@@ -38,7 +38,7 @@ def create_tool_node(tool_registry: ToolRegistry):
         for tool_call in last_message.tool_calls: # type: ignore
 
             tool_name = tool_call["name"]
-            tool_args = tool_call.get("args" or {})
+            tool_args = tool_call.get("args") or {}
 
             tool_obj = tool_registry.get_tool(tool_name)[tool_name]
 

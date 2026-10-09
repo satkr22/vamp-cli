@@ -1,8 +1,10 @@
+import os
+# os.environ["LITELLM_LOG"] = "DEBUG"
+
 import logging
 from pathlib import Path
 
 from vamp_cli.config.loader import load_config
-from vamp_cli.llm.router import ModelRouter
 from vamp_cli.llm.router import ModelRouter
 from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.prompts.prompts import PromptStore
@@ -23,8 +25,9 @@ from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
 from vamp_cli.agent.status import AgentStatus
+from vamp_cli.logging_setup import setup
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 log = logging.getLogger(__name__)
@@ -94,6 +97,9 @@ def create_runtime():
         ), tool_registry, sandbox
         
 def main():
+    
+    setup(level=logging.DEBUG, log_dir=".vamp/logs")
+    
     agent_runtime, tool_registry, sandbox = create_runtime()     
     
     agent_profile = agent_runtime.resolve(AgentRole.DEFAULT)
@@ -105,15 +111,14 @@ def main():
     
     result = graph.invoke({
         "messages": [
+            SystemMessage(
+                content=agent_profile.system_prompt
+            ),
             HumanMessage(
-                # content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
-                # content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
-                # content="can you tell me how sandbox is working for this coding agent project??"
-                # content="List the files in this repository."
                 content="read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
             )
         ],
-        "task": "List the files in this repository.",
+        "task": "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??",
         "iteration": 0,
     })
     
@@ -129,3 +134,12 @@ def main():
         
 if __name__ == "__main__":
     main()
+    
+    
+    
+# content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
+
+# content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
+
+# content="can you tell me how sandbox is working for this coding agent project??"
+                
