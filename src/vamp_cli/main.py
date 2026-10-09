@@ -98,7 +98,7 @@ def create_runtime():
         
 def main():
     
-    setup(level=logging.DEBUG, log_dir=".vamp/logs")
+    setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
     
     agent_runtime, tool_registry, sandbox = create_runtime()     
     
