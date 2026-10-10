@@ -40,6 +40,7 @@ def create_planner_node(model: Runnable, tool_registry: ToolRegistry):
                 break
         
         print("\n\nPLANNER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
+        print(".\n.\n.\n", plan)
         
         return {
             "planner_messages": messages_to_return,

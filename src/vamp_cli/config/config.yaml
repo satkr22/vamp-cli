@@ -1,6 +1,6 @@
 models:
   qwen:
-    model: dashscope/deepseek-v4.1-flash
+    model: dashscope/qwen3.8-omni-flash
     api_base: https://ws-n7c4pdh4ldno9hkc.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: DASHSCOPE_API_KEY
     adapter: default

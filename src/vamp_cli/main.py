@@ -117,7 +117,7 @@ def main():
     # mode: str = "normal"
     mode: str = "plan"
     
-    task: str = "how is the langgraph configured to achieve plan and normal mode in this project??"
+    task: str = "how to write a tool for llm which can also deliver an image to the llm and it will be used by llm with tool calls so add this tool in a seperate file in the top of the repo and do not cange any other file at all"
     
     payload: AgentState = {
         
@@ -175,3 +175,5 @@ if __name__ == "__main__":
 # content="can you tell me how sandbox is working for this coding agent project??"
 
 # task: str = "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
+
+# task: str = "how is the langgraph configured to achieve plan and normal mode in this project??"
