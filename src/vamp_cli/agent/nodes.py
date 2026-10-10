@@ -1,7 +1,7 @@
 import json
 
 from langchain_core.runnables import Runnable
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, HumanMessage
 
 from vamp_cli.agent.state import AgentState
 from vamp_cli.agent.state import AgentState
@@ -9,30 +9,89 @@ from vamp_cli.tools.registry import ToolRegistry
 
 
 
+def create_planner_node(model: Runnable, tool_registry: ToolRegistry):
+
+    def planner_node(state: AgentState):
+
+        # The planner gets the same model or different model (if user as configured for planner explicitly) interface,
+        # with a restricted read-only tool registry.
+
+        messages = state["planner_messages"]
+
+        response = model.invoke(messages)
+        
+        messages_to_return = [response]
+        plan = response.content
+        requires_execution = True
+        
+        for tc in (response.tool_calls or []):
+            if tc["name"] == "submit_plan":
+                messages_to_return.append(
+                    ToolMessage(
+                        content=json.dumps({"status": "Plan submitted."}),
+                        tool_call_id=tc["id"],
+                        name="submit_plan",
+                        status="success"
+                    )
+                )
+                args = tc.get("args") or {}
+                plan = args.get("plan", plan)
+                requires_execution = bool(args.get("requires_execution", True))
+                break
+        
+        print("\n\nPLANNER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
+        
+        return {
+            "planner_messages": messages_to_return,
+            "plan": plan,
+            "requires_execution": requires_execution,
+            "iteration": state["iteration"] + 1,
+        }
+
+    return planner_node
+
+
 def create_agent_node(model: Runnable):
 
     def agent_node(state: AgentState):
-        response = model.invoke(state["messages"])
+        
+        message_to_send = state["coder_messages"]
+        
+        plan_injected = state.get("is_plan_injected", False)
+        
+        if state["mode"] == "plan":
+            plan = state["plan"]
+            
+            if not plan_injected and plan:
+                plan_message = SystemMessage(content=f"Here is the project plan:\n{state['plan']}")
+                plan_instruction = SystemMessage(content=f"The plan above was produced by a separate planning agent after repository exploration. Treat it as the intended implementation plan, not as the user's original request. Use it as guidance, verify details against the repository when necessary, and execute the plan.")
+                
+                message_to_send += [plan_message] + [plan_instruction]
+                
+                plan_injected = True
+        
+        response: AIMessage = model.invoke(message_to_send)
 
+        print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
+        
         return {
-            "messages": [response],
-            "iteration": state["iteration"] + 1
+            "coder_messages": [response],
+            "is_plan_injected": plan_injected,
+            "iteration": state["iteration"] + 1,
         }
-
     return agent_node
-
-
-
 
 def create_tool_node(tool_registry: ToolRegistry):
 
     def tool_node(state: AgentState):
-
-        last_message = state["messages"][-1]
         
-        # print(type(last_message))
-        # print(last_message)
+        message_type: str = "coder_messages"
+        
+        if type(state[message_type][-1]) != AIMessage:
+            message_type = "planner_messages"
 
+        last_message = state[message_type][-1]
+        
         tool_messages:list[ToolMessage] = []
 
         for tool_call in last_message.tool_calls: # type: ignore
@@ -60,7 +119,7 @@ def create_tool_node(tool_registry: ToolRegistry):
             )
 
         return {
-            "messages": tool_messages
+            message_type: tool_messages
         }
 
     return tool_node

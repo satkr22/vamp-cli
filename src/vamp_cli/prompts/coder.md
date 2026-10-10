@@ -1,5 +1,5 @@
 ---
-name: agent
+name: coder
 version: 1
 variables: []
 ---

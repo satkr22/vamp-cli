@@ -37,7 +37,7 @@ models:
       context_window: 128000
 
 profiles:
-  default:
+  default_coder:
     model: qwen
     tools:
       - list_dir
@@ -47,7 +47,43 @@ profiles:
       - file_search
       - ripgrep_search
       - execute_command
-    prompt: prompts/agent.md
+    prompt: prompts/coder.md
 
-default_profile: default
+  default_planner:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - file_search
+      - ripgrep_search
+      - submit_plan
+      - execute_command
+    prompt: prompts/planner.md
+
+  planner:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - file_search
+      - ripgrep_search
+      - submit_plan
+      - execute_command
+    prompt: prompts/planner.md
+
+  coder:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - apply_search_replace
+      - write_file
+      - file_search
+      - ripgrep_search
+      - execute_command
+    prompt: prompts/coder.md
+
+default_profile: 
+  - default_coder
+  - default_planner
 

@@ -136,7 +136,7 @@ class ModelRouter:
         primary_runnable: Runnable[Any, Any] = primary_bound.with_config(
             callbacks=[
                 _UsageCallback(self._usage, model_name, usage_context),
-                DumpPayloadCallback(),
+                # DumpPayloadCallback(),
             ],
             tags=[f"llm-model:{model_name}"]
             + ([f"usage:{usage_context}"] if usage_context else []),

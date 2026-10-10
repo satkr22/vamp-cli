@@ -90,12 +90,15 @@ class AgentRuntime:
 
         if role.value in profiles:
             return profiles[role.value]
-
-        if "default" in profiles:
-            return profiles["default"]
+        
+        if role.value not in profiles:
+            if role.value == "coder":
+                return profiles["default_coder"]
+            if role.value == "planner":
+                return profiles["default_planner"]
 
         raise KeyError(
-            f"Role '{role}' is not configured and no 'default' profile exists"
+            f"Role '{role}' is not configured and no 'default_{role.value}' profile exists"
         )
     
 

@@ -54,13 +54,21 @@ class AppConfig(BaseModel):
 
     models: dict[str, ModelConfig]
     profiles: dict[str, ProfileConfig] = Field(default_factory=dict)
-    default_profile: str = "default"
+    default_profile: list[str] = ["default_coder", "default_planner"]
     
     @model_validator(mode="after")
     def _check_references(self) -> "AppConfig":
-        if "default" not in self.profiles:
-            raise ValueError("config must define a 'default' profile")
-    
+        
+        # Ensure default_profile list is not empty
+        if not self.default_profile:
+            raise ValueError("config must define at least one item in default_profile")
+        
+        # Check that every item in default_profile list actually exists under profiles
+        for p in self.default_profile:
+            if p not in self.profiles:
+                raise ValueError(f"default_profile item '{p}' is not defined in profiles.")
+
+        # Check profile models match defined models
         for name, profile in self.profiles.items():
             if profile.model not in self.models:
                 raise ValueError(

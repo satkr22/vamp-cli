@@ -25,12 +25,14 @@ from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
 from vamp_cli.agent.status import AgentStatus
-from vamp_cli.logging_setup import setup
+from vamp_cli.agent.state import AgentState
+
+from vamp_cli.logging_setup.logging_setup import setup
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
 
 PROJECT_DIR = str(Path.cwd())
 
@@ -63,13 +65,14 @@ def build_startup():
         FileSearchTool(file_tools),
         RipgrepSearchTool(file_tools),
         ExecuteCommandToolDef(exec_tool),
+        SubmitPlanTool(),
     ]
 
     # --- tool registry ---------------------------------------------------------
     registry = ToolRegistry()
     registry.register_many(tools)
 
-    log.info("Registered %d tools: %s", len(registry), registry.list_tool_names())
+    # log.info("Registered %d tools: %s", len(registry), registry.list_tool_names())
     
     return registry, d_sandbox
 
@@ -98,33 +101,55 @@ def create_runtime():
         
 def main():
     
-    setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
+    # setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
     
     agent_runtime, tool_registry, sandbox = create_runtime()     
     
-    agent_profile = agent_runtime.resolve(AgentRole.DEFAULT)
-        
+    coder_profile = agent_runtime.resolve(AgentRole.CODER)
+    planner_profile = agent_runtime.resolve(AgentRole.PLANNER)
+    
     graph = create_graph(
-        model=agent_profile.model,
+        coder_model=coder_profile.model,
+        planner_model=planner_profile.model,
         tool_registry=tool_registry
     )
     
-    result = graph.invoke({
-        "messages": [
-            SystemMessage(
-                content=agent_profile.system_prompt
-            ),
-            HumanMessage(
-                content="read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
-            )
-        ],
-        "task": "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??",
-        "iteration": 0,
-    })
+    # mode: str = "normal"
+    mode: str = "plan"
     
-    for message in result["messages"]:
-        # print(type(message))
-        print(message)
+    task: str = "how is the langgraph configured to achieve plan and normal mode in this project??"
+    
+    payload: AgentState = {
+        
+        "planner_messages": [
+            SystemMessage(content=planner_profile.system_prompt),
+            HumanMessage(content=task)
+        ],
+        
+        "coder_messages": [
+            SystemMessage(content=coder_profile.system_prompt),
+            HumanMessage(content=task)
+        ],
+        
+        "task": task,
+        
+        "mode": mode,
+
+        "plan": "",
+        
+        "requires_execution": True,
+        
+        "is_plan_injected": False,
+
+        "todo": [],
+        
+        "iteration": 0,
+    }
+    
+    result = graph.invoke(payload)
+    
+    # for message in result["coder_messages"]:
+    #     print(message)
         
     usage_dict = agent_runtime._model_router.usage()
     print(usage_dict)
@@ -136,10 +161,17 @@ if __name__ == "__main__":
     main()
     
     
+
+
+
+
+
+
     
 # content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
 
 # content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
 
 # content="can you tell me how sandbox is working for this coding agent project??"
-                
+
+# task: str = "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"

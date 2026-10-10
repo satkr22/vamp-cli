@@ -395,3 +395,51 @@ class ExecuteCommandToolDef(Tools):
         cwd = inputs.get("cwd", ".")
         result = self.execute_command_tool.execute_command(command, cwd)
         return json.dumps(result)
+    
+    
+class SubmitPlanTool(Tools):
+    name = "submit_plan"
+    description = (
+        "Submit the final plan or answer and declare whether execution is required. "
+        "Call this exactly once when you are completely finished investigating and ready to hand off. "
+        "This tool does not read files, run commands, or modify anything. "
+        "It is a control signal used by the runtime to decide whether to end the run or hand the plan to the coder. "
+        "Use it when:"
+            "- You have finished all your tool calls and are ready to produce the final output."
+            "- You need the runtime to know whether the request is purely informational or requires execution."
+        "Do not use it before you are done, and do not call it more than once. "
+        "Set requires_execution to false only if the request is fully answered by the plan text alone and no files need to change and no commands need to run. "
+        "Otherwise set requires_execution to true."
+    )
+    input_schema = InputSchema(
+        type="object",
+        properties={
+            "plan": {
+                "type": "string",
+                "description": (
+                    "The complete final plan or answer. "
+                    "For execution requests, this should be a step-by-step plan the coder can follow. "
+                    "For informational requests, this should be the full explanation or answer. Required."
+                ),
+            },
+            "requires_execution": {
+                "type": "boolean",
+                "description": (
+                    "True if the request requires modifying files or running commands. "
+                    "False if the request is purely informational and is fully answered by the 'plan' text."
+                    "Required."
+                ),
+            },
+        },
+        required=["plan", "requires_execution"],
+        additionalProperties=False,
+    )
+
+    @override
+    def run(self, **inputs) -> str:
+        # This tool is a control signal and must be intercepted by the tool node.
+        # If run() is ever reached, the interception logic is missing.
+        # raise RuntimeError(
+        #     "submit_plan is a control tool and must be intercepted before execution."
+        # )
+        return json.dumps({"status": "Plan submitted."})

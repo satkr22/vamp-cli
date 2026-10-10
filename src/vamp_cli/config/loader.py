@@ -75,7 +75,7 @@ def _validate_references(config: AppConfig) -> None:
     if not model_names:
         raise ConfigError("At least one model must be configured.")
 
-    if config.profiles and config.default_profile not in config.profiles:
+    if config.profiles and any(p not in config.profiles for p in config.default_profile):
         raise ConfigError(
             f"default_profile '{config.default_profile}' is not defined in profiles."
         )
