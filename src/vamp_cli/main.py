@@ -1,6 +1,5 @@
 import os
-# os.environ["LITELLM_LOG"] = "DEBUG"
-
+import sys
 import logging
 from pathlib import Path
 
@@ -24,13 +23,14 @@ from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
 
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
-from vamp_cli.agent.status import AgentStatus
+from vamp_cli.agent.status import AgentStatus, FeedbackResponse
 from vamp_cli.agent.state import AgentState
 
 from vamp_cli.logging_setup.logging_setup import setup
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.types import Command
 
 # log = logging.getLogger(__name__)
 
@@ -116,49 +116,138 @@ def main():
         tool_registry=tool_registry
     )
     
-    mode: str = "normal"
-    # mode: str = "plan"
+    # Session configuration context tracking thread
+    session_config: RunnableConfig = {"configurable": {"thread_id": "interactive_vamp_cli_session"}}
     
-    task: str = "explain the router.py and what it is actually doing"
-    
-    payload: AgentState = {
-        
-        "planner_messages": [
-            SystemMessage(content=planner_profile.system_prompt),
-            HumanMessage(content=task)
-        ],
-        
-        "coder_messages": [
-            SystemMessage(content=coder_profile.system_prompt),
-            HumanMessage(content=task)
-        ],
-        
-        "task": task,
-        
-        "mode": mode,
+    print("\nVAMP-CLI Agent Workspace Initialized.")
+    print("Type 'exit' or 'quit' to exit this and clear docker instances safely.\n")
 
-        "plan": "",
-        
-        "requires_execution": True,
-        
-        "is_plan_injected": False,
-
-        "todo": [],
-        
-        "iteration": 0,
-    }
+    is_session_started = False
+    pending_command = None
     
-    result = graph.invoke(payload)
-    
-    # for message in result["coder_messages"]:
-    #     print(message)
-        
-    usage_dict = agent_runtime._model_router.usage()
-    print(usage_dict)
-        
-    sandbox.stop()
-        
-        
+    while True:
+        try:
+            mode = "normal"
+            # 0. user selects the mode:
+            if pending_command is None:
+                u_mode = input("\nSelect Mode: Plan or Normal\nType Choice: ").strip().lower()
+                if u_mode == "plan":
+                    mode = "plan"
+                elif u_mode == "normal":
+                    mode = "normal"
+                else:
+                    print("Type the correct mode spelling.")
+                    continue
+                    
+                # 1. get the query from the user
+                user_input = input("\nYou: ").strip()
+                if not user_input:
+                    continue
+                if user_input.lower() in ["exit", "quit"]:
+                    print("Stopping active workspace containers...")
+                    sandbox.stop()
+                    sys.exit(0)
+            
+                # 2. Build or pass updates to the thread state
+                if not is_session_started:
+                    # first message so initialize all seed states
+                    payload = {
+                            
+                        "planner_messages": [
+                            SystemMessage(content=planner_profile.system_prompt),
+                            HumanMessage(content=user_input)
+                        ],
+                        
+                        "coder_messages": [
+                            SystemMessage(content=coder_profile.system_prompt),
+                            HumanMessage(content=user_input)
+                        ],
+                        
+                        "task": user_input,
+                        
+                        "mode": mode,
+                        
+                        "plan": "",
+                        
+                        "requires_execution": True,
+                        
+                        "is_plan_injected": False,
+                        
+                        "todo": [],
+                        
+                        "iteration": 0,
+                    }
+                    is_session_started = True
+                else:
+                    # recurring turns
+                    message_type = "planner_messages" if mode == "plan" else "coder_messages"
+                    payload = {
+                        message_type: [HumanMessage(content=user_input)],
+                        "mode": mode
+                    }
+                    
+            else:
+                payload = pending_command
+                pending_command = None 
+            
+            # 2. Fire execution step
+            result = graph.invoke(payload, config=session_config) # type: ignore
+            
+            # 3. Handle runtime verification interrupts
+            state_snapshot = graph.get_state(session_config)
+            
+            # Identify if the exception is an human intercept exception or not
+            active_interrupts = getattr(state_snapshot, "interrupts", [])
+            
+            if not active_interrupts and state_snapshot.tasks:
+                # Fallback check inside individual graph task state frames
+                for task in state_snapshot.tasks:
+                    if getattr(task, "interrupts", None):
+                        active_interrupts = task.interrupts
+                        break
+                    
+            if active_interrupts:
+                # Safe structure extraction 
+                raw_interrupt = active_interrupts[0]
+                checkpoint_data = getattr(raw_interrupt, "value", raw_interrupt)
+                
+                print("\n" + "*" * 40)
+                print("SECURITY VERIFICATION INTERCEPTED")
+                print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
+                print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
+                print(f"System Message:   {checkpoint_data.get('warning', '')}") # type: ignore
+                print("*" * 40 + "\n")
+                
+                choice = input("Do you authorize this execution run? (yes/no): ").strip().lower()
+                
+                if choice in ["y", "yes"]:
+                    print("Authorized. Continuing execution...")
+                    # Command unpauses the graph right where it froze, passing back the approval dict
+                    user_response = FeedbackResponse(approved=True)
+                    
+                    pending_command = Command(resume=user_response)
+                    
+                else:
+                    reason = input("Provide rejection reasoning/feedback directly to the model: ").strip()
+                    
+                    print("Blocked. Returning execution exception back to agent history...")
+                    
+                    user_response = FeedbackResponse(approved=False, reason=reason)
+                    
+                    pending_command = Command(resume=user_response)
+            else:
+                # 4. Print out the AI's final turn response text
+                active_log = "planner_messages" if mode == "plan" else "coder_messages"
+                if result.get(active_log):
+                    last_msg = result[active_log][-1]
+                    if isinstance(last_msg, AIMessage) and last_msg.content:
+                        print(f"\nAgent:\n{last_msg.content}")
+            
+            
+        except Exception as e:
+            sandbox.stop()
+            pass
+       
 if __name__ == "__main__":
     main()
     

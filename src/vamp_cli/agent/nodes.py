@@ -1,30 +1,34 @@
 import json
-from typing import Any
+from typing import Any, Optional
+from pydantic import BaseModel
 
+from langgraph.types import interrupt
 from langchain_core.runnables import Runnable
 from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, BaseMessage
 
 from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.agent.state import AgentState, TodoItem
 from vamp_cli.agent.state import AgentState
+from vamp_cli.agent.status import FeedbackResponse
 from vamp_cli.agent.instructions import TODO_INSTRUCTIONS, PLAN_INSTRUCTIONS
+
 
 
 def create_planner_node(model: Runnable):
 
     def planner_node(state: AgentState):
-        print("#"*50)
-        print("INSIDE PLANNER NODE")
+        # print("#"*50)
+        # print("INSIDE PLANNER NODE")
         # The planner gets the same model or different model (if user as configured for planner explicitly) interface,
         # with a restricted read-only tool registry.
 
         messages = state["planner_messages"]
 
-        print("#"*50)
-        print("INSIDE PLANNER NODE JUST BEFORE INVOKE")
+        # print("#"*50)
+        # print("INSIDE PLANNER NODE JUST BEFORE INVOKE")
         response = model.invoke(messages)
-        print("#"*50)
-        print("INSIDE PLANNER NODE JUST AFTER INVOKE")
+        # print("#"*50)
+        # print("INSIDE PLANNER NODE JUST AFTER INVOKE")
         
         messages_to_return = [response]
         plan = response.content
@@ -54,8 +58,8 @@ def create_planner_node(model: Runnable):
             "requires_execution": requires_execution,
             "iteration": state["iteration"] + 1,
         }
-    print("#"*50)
-    print("LEAVING PLANNER NODE")
+    # print("#"*50)
+    # print("LEAVING PLANNER NODE")
     return planner_node
 
 
@@ -106,8 +110,8 @@ def create_tool_node(tool_registry: ToolRegistry):
 
     def tool_node(state: AgentState):
         
-        print("#"*50)
-        print("INSIDE TOOL NODE")
+        # print("#"*50)
+        # print("INSIDE TOOL NODE")
         
         message_type: str = "coder_messages"
         
@@ -123,7 +127,53 @@ def create_tool_node(tool_registry: ToolRegistry):
 
             tool_name = tool_call["name"]
             tool_args = tool_call.get("args") or {}
-
+            
+            
+            # human in the loop checkpoint
+            
+            is_bash = tool_name == "execute_command" or "execute" in tool_name.lower()
+            
+            contains_danger = False
+            if is_bash:
+                contains_danger = "rm " in str(tool_args.get("command")).lower() or "rmdir " in str(tool_args.get("command")).lower() or "curl " in str(tool_args.get("command")).lower() or "pip install " in str(tool_args.get("command")).lower()
+                
+            
+            if is_bash and contains_danger:
+                # throw out to the ternimal shell loop
+                checkpoint_payload = {
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "warning": "CAUTION: Executing terminal system commands, internet access or destructive deletions requires verification."
+                }
+                
+                # execution halts here
+                user_feedback: FeedbackResponse = interrupt(value=checkpoint_payload, response_schema=FeedbackResponse)
+                
+                if user_feedback.approved == False:
+                    reason = user_feedback.reason
+                    if reason is None:
+                        reason = "Human explicitly denied execution authority."
+                    
+                    denial_message = (
+                        f"CRITICAL ACCESS DENIED: The security administrator has EXPLICITLY FORBIDDEN "
+                        f"to execute the denied task in any possible way.\n"
+                        f"Reason: {reason}\n"
+                        f"MANDATE: You are strictly ordered to CEASE all attempts to execute the denied task in any possbile way. Abort this task "
+                        f"immediately and explain this security restriction to the user. do not try to complete this task again. move to another task."
+                    )
+                    
+                    tool_messages.append(
+                        ToolMessage(
+                            content=denial_message,
+                            tool_call_id=tool_call["id"],
+                            name=tool_name,
+                            status="error"
+                        )
+                    )
+                    print("command skipped")
+                    continue # Skip actual execution of this tool call
+            
+            # Proceed safely with execution if approved or harmless command          
             try:
                 tool_obj = tool_registry.get_tool(tool_name)[tool_name]
                 result = tool_obj.run(**tool_args)
@@ -155,8 +205,8 @@ def create_tool_node(tool_registry: ToolRegistry):
         if todo_update is not None:
             update["todo"] = todo_update
         
-        print("#"*50)
-        print("LEAVING TOOL NODE")
+        # print("#"*50)
+        # print("LEAVING TOOL NODE")
         return update
 
     return tool_node
