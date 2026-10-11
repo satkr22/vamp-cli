@@ -108,6 +108,84 @@ class FileTools():
                 "error": f"Failed to read file: {str(e)}"
             }
     
+    def read_many_files(
+        self,
+        paths: list[str],
+        start: int | None = None,
+        end: int | None = None
+    ) -> dict[str, list[dict[str, str | int]] | str]:
+        """
+        Read multiple files in a single call.
+        
+        Accepts a list of file paths and optional line range parameters.
+        For each file path, validates it's within workspace scope.
+        Returns a structured result containing the content of all requested files
+        with their paths, line ranges, and any errors for files that couldn't be read.
+        """
+        results: list[dict[str, str | int]] = []
+        
+        for path in paths:
+            _path = self.workspace.safe_path(path)
+            
+            if _path == Error_codes.PATH_SCOPE_ERROR:
+                results.append({
+                    "path": path,
+                    "error": Error_codes.PATH_SCOPE_ERROR.value
+                })
+                continue
+            
+            if not Path(_path).is_file():
+                results.append({
+                    "path": path,
+                    "error": Error_codes.NOT_FILE_ERROR.value
+                })
+                continue
+                
+            MAX_RANGE = 500
+            start_line = max(1, start) if start is not None else 1
+            
+            if end is not None:
+                end_line = min(max(end, start_line), start_line + MAX_RANGE - 1)
+            else:
+                end_line = start_line + MAX_RANGE - 1
+                
+            lines = []
+            try:
+                total_bytes = os.path.getsize(_path)
+                total_lines = 0
+                
+                with open(_path, 'r', encoding='utf-8', errors='replace') as f:
+                    for curr_line, line in enumerate(f, start=1):
+                        if start_line <= curr_line <= end_line:
+                            lines.append(f"{curr_line}: {line}")
+                        total_lines = curr_line
+                
+                content = "".join(lines)
+                
+                results.append({
+                    "path": path,
+                    "start": start_line,
+                    "end": min(end_line, total_lines) if total_lines > 0 else end_line,
+                    "total_line": total_lines,
+                    "content": content,
+                    "file_size_bytes": total_bytes
+                })
+                
+            except FileNotFoundError:
+                results.append({
+                    "path": path,
+                    "error": Error_codes.FILE_NOT_FOUND_ERROR.value
+                })
+            except Exception as e:
+                results.append({
+                    "path": path,
+                    "error": f"Failed to read file: {str(e)}"
+                })
+        
+        return {
+            "files": results
+        }
+    
     def write_file(
         self,
         path: str,

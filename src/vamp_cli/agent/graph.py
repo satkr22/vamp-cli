@@ -86,10 +86,6 @@ def should_continue(state: AgentState) -> Literal["tools", "__end__"]:
     if not last_message.tool_calls:
         return "__end__"
 
-    # If the planner just submitted its plan, stop the loop.
-    if any(tc["name"] == "submit_plan" for tc in last_message.tool_calls):
-        return "__end__"
-
     return "tools"
 
 
@@ -118,10 +114,7 @@ def create_graph(
 
     coder_node = create_agent_node(coder_model)
 
-    planner_node = create_planner_node(
-        planner_model,
-        tool_registry,
-    )
+    planner_node = create_planner_node(planner_model)
 
     coder_tool_node = create_tool_node(tool_registry)
     planner_tool_node = create_tool_node(tool_registry)

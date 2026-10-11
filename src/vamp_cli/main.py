@@ -66,6 +66,7 @@ def build_startup():
         RipgrepSearchTool(file_tools),
         ExecuteCommandToolDef(exec_tool),
         SubmitPlanTool(),
+        WriteTodosTool(),
     ]
 
     # --- tool registry ---------------------------------------------------------
@@ -117,7 +118,7 @@ def main():
     # mode: str = "normal"
     mode: str = "plan"
     
-    task: str = "how to write a tool for llm which can also deliver an image to the llm and it will be used by llm with tool calls so add this tool in a seperate file in the top of the repo and do not cange any other file at all"
+    task: str = "write me a read_many_files tool for the llm and do not change any other code"
     
     payload: AgentState = {
         

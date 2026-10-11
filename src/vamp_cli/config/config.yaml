@@ -1,6 +1,6 @@
 models:
   qwen:
-    model: dashscope/qwen3.8-omni-flash
+    model: dashscope/qwen3.5-plus
     api_base: https://ws-n7c4pdh4ldno9hkc.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
     api_key_env: DASHSCOPE_API_KEY
     adapter: default
@@ -47,6 +47,7 @@ profiles:
       - file_search
       - ripgrep_search
       - execute_command
+      - write_todos
     prompt: prompts/coder.md
 
   default_planner:
@@ -81,6 +82,7 @@ profiles:
       - file_search
       - ripgrep_search
       - execute_command
+      - write_todos
     prompt: prompts/coder.md
 
 default_profile: 

@@ -100,6 +100,64 @@ class ReadFileTool(Tools):
         return json.dumps(result)
 
 
+class ReadManyFilesTool(Tools):
+    name = "read_many_files"
+    description = (
+        "Read multiple files in a single call."
+        "Use this tool when you need to inspect the contents of several files at once."
+        "It accepts a list of file paths and optional line range parameters."
+        "For each file path, validates it's within workspace scope."
+        "Returns a structured result containing the content of all requested files"
+        "with their paths, line ranges, and any errors for files that couldn't be read."
+        
+        "Line numbers are 1-indexed. A single call can return at most 500 lines per file."
+        "If the requested range is larger, it is automatically capped to 500 lines."
+        
+        "The returned content includes the source line number before each line."
+        "The response also reports the actual returned range, total number of lines in the file, and file size in bytes."
+        
+        "The file is decoded as UTF-8; invalid UTF-8 bytes are replaced rather than causing decoding to fail."
+        
+        "Use this instead of:"
+            "- Multiple 'read_file' calls when you need to read several files."
+            "- 'file_search' when you already know the file paths and need file contents."
+    )
+    
+    input_schema = InputSchema(
+        type="object",
+        properties={
+            "paths": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "List of file paths to read. Required."
+            },
+            "start": {
+                "type": "integer",
+                "description": "First line to return for all files, defaults to 1."
+            },
+            "end": {
+                "type": "integer",
+                "description": "Last line to return for all files, defaults to start + 499."
+            },
+        },
+        required=["paths"],
+        additionalProperties=False,
+    )
+
+    def __init__(self, file_tools: FileTools):
+        self.file_tools = file_tools
+
+    @override
+    def run(self, **inputs) -> str:
+        paths = inputs["paths"]
+        start = inputs.get("start")
+        end = inputs.get("end")
+        result = self.file_tools.read_many_files(paths, start, end)
+        return json.dumps(result)
+
+
 class WriteFileTool(Tools):
     name = "write_file"
     description = (
@@ -443,3 +501,103 @@ class SubmitPlanTool(Tools):
         #     "submit_plan is a control tool and must be intercepted before execution."
         # )
         return json.dumps({"status": "Plan submitted."})
+    
+    
+class WriteTodosTool(Tools):
+    name = "write_todos"
+    description = (
+        "Create or update the todo list that tracks the work you are performing for the current task."
+
+        "Use this tool to plan multi-step work before you begin, and to keep the list current as you make progress."
+
+        "The todo list is a structured checklist of discrete, verifiable tasks. Each item has a stable id, a short imperative description, and a status."
+
+        "This tool REPLACES the entire previous todo list with the supplied list on every call. Always send the COMPLETE list, not just the items that changed. If you have three items and one becomes completed, call this tool again with all three items, one of them marked completed."
+
+        "Exactly one item may be in_progress at a time. If you have no active work (for example between steps), all items may be pending. Never mark an item completed until the change has been applied and verified — if verification failed, mark it blocked instead."
+
+        "Keep item ids stable across updates so progress can be tracked. Do not renumber or reassign ids between calls."
+
+        "Call this tool:"
+            "- Once before you begin making changes, to lay out the plan as a todo list."
+            "- Again every time the status of any item changes."
+            "- Again when you discover additional work and need to add items."
+
+        "Use this instead of:"
+            "- Explaining your plan in prose when you intend to execute it. The todo list is the tracking mechanism the user sees."
+            "- Calling this tool with a partial list. It replaces the whole list; partial updates will lose items."
+
+        "Do not use this for:"
+            "- Purely informational answers that require no execution. In that case no todo list is needed."
+            "- Tracking sub-steps so small that no useful progress information is conveyed."
+    )
+    input_schema = InputSchema(
+        type="object",
+        properties={
+            "todos": {
+                "type": "array",
+                "description": (
+                    "The COMPLETE todo list, replacing any previous list. "
+                    "Every item currently being tracked must be included. Required."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": (
+                                "Stable identifier for this item. Must not change across updates. Required."
+                            ),
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": (
+                                "Short imperative description of the task, for example 'Add retry logic to client.py'. Required."
+                            ),
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "pending",
+                                "in_progress",
+                                "completed",
+                                "blocked",
+                            ],
+                            "description": (
+                                "Current status of this item. "
+                                "'pending' means not started, "
+                                "'in_progress' means currently being worked on, "
+                                "'completed' means finished and verified, "
+                                "'blocked' means it cannot proceed. Required."
+                            ),
+                        },
+                    },
+                    "required": ["id", "description", "status"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        required=["todos"],
+        additionalProperties=False,
+    )
+
+    @override
+    def run(self, **inputs) -> str:
+        todos = inputs["todos"]
+
+        in_progress = [t for t in todos if t["status"] == "in_progress"]
+        if len(in_progress) > 1:
+            raise ValueError(
+                "Only one todo item may be 'in_progress' at a time. "
+                f"Found {len(in_progress)}: "
+                + ", ".join(t["id"] for t in in_progress)
+            )
+
+        seen_ids = set()
+        for t in todos:
+            if t["id"] in seen_ids:
+                raise ValueError(f"Duplicate todo id: {t['id']!r}")
+            seen_ids.add(t["id"])
+
+        # The tool node intercepts this payload and writes it into state["todo"].
+        return json.dumps(todos)
