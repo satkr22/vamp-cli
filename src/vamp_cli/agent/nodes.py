@@ -124,9 +124,8 @@ def create_tool_node(tool_registry: ToolRegistry):
             tool_name = tool_call["name"]
             tool_args = tool_call.get("args") or {}
 
-            tool_obj = tool_registry.get_tool(tool_name)[tool_name]
-
             try:
+                tool_obj = tool_registry.get_tool(tool_name)[tool_name]
                 result = tool_obj.run(**tool_args)
 
             except Exception as e:
@@ -135,7 +134,7 @@ def create_tool_node(tool_registry: ToolRegistry):
                 }
                 
             # intercept the todo tool and write into state
-            if tool_name == "write_todos" and isinstance(result, str):
+            if tool_name == "write_update_todos" and isinstance(result, str):
                 try:
                     todo_update = json.loads(result)
                 except json.JSONDecodeError:
@@ -167,11 +166,11 @@ def create_tool_node(tool_registry: ToolRegistry):
 
 
 def _turns_since_todo_update(messages: list[BaseMessage]) -> int:
-    """How many AIMessages have passed since the last write_todos call."""
+    """How many AIMessages have passed since the last write_update_todos call."""
     count = 0
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and msg.tool_calls:
-            if any(tc["name"] == "write_todos" for tc in msg.tool_calls):
+            if any(tc["name"] == "write_update_todos" for tc in msg.tool_calls):
                 return count
             count += 1
         elif isinstance(msg, AIMessage):
@@ -191,6 +190,6 @@ def _format_todo_reminder(todos: list[TodoItem]) -> str:
         lines.append(f"  {marks[t['status']]} {t['id']}. {t['description']}")
     lines.append(
         "Continue with the next in_progress or pending item. "
-        "Call write_todos when the status of any item changes."
+        "Call write_update_todos when the status of any item changes."
     )
     return "\n".join(lines)

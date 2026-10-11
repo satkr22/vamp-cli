@@ -60,6 +60,7 @@ def build_startup():
     tools = [
         ListDirTool(file_tools),
         ReadFileTool(file_tools),
+        ReadManyFilesTool(file_tools),
         WriteFileTool(file_tools),
         ApplySearchReplaceTool(file_tools),
         FileSearchTool(file_tools),
@@ -115,10 +116,10 @@ def main():
         tool_registry=tool_registry
     )
     
-    # mode: str = "normal"
-    mode: str = "plan"
+    mode: str = "normal"
+    # mode: str = "plan"
     
-    task: str = "write me a read_many_files tool for the llm and do not change any other code"
+    task: str = "explain the router.py and what it is actually doing"
     
     payload: AgentState = {
         
@@ -178,3 +179,5 @@ if __name__ == "__main__":
 # task: str = "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
 
 # task: str = "how is the langgraph configured to achieve plan and normal mode in this project??"
+
+# task: str = "write me a read_many_files tool for the llm and do not change any other code"

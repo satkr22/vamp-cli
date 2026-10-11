@@ -1,8 +1,8 @@
 TODO_INSTRUCTIONS = """\
-    You maintain a todo list for every non-trivial task, using the `write_todos` tool.
+    You maintain a todo list for every non-trivial task, using the `write_update_todos` tool.
 
     Rules:
-    - Call `write_todos` BEFORE you start making changes, and again whenever the
+    - Call `write_update_todos` BEFORE you start making changes, and again whenever the
     status of any item changes.
     - Always send the COMPLETE list — it replaces the previous one.
     - Exactly one item may be `in_progress` at a time.

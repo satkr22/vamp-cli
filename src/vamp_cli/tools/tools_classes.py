@@ -379,7 +379,7 @@ class RipgrepSearchTool(Tools):
             },
             "is_regex": {
                 "type": "boolean",
-                "description": "Interpret query as a regular expression. Defaults to false.",
+                "description": "Interpret query as a regular expression. Defaults to false. Required.",
             },
             "file_pattern": {
                 "type": "string",
@@ -390,7 +390,7 @@ class RipgrepSearchTool(Tools):
                 "description": "Maximum number of matching lines to return. Defaults to 50.",
             },
         },
-        required=["query"],
+        required=["query", "is_regex"],
         additionalProperties=False,
     )
 
@@ -504,7 +504,7 @@ class SubmitPlanTool(Tools):
     
     
 class WriteTodosTool(Tools):
-    name = "write_todos"
+    name = "write_update_todos"
     description = (
         "Create or update the todo list that tracks the work you are performing for the current task."
 
@@ -530,6 +530,8 @@ class WriteTodosTool(Tools):
         "Do not use this for:"
             "- Purely informational answers that require no execution. In that case no todo list is needed."
             "- Tracking sub-steps so small that no useful progress information is conveyed."
+        "NOTE:"
+            "- Always send the COMPLETE list, not just the items that changed."
     )
     input_schema = InputSchema(
         type="object",

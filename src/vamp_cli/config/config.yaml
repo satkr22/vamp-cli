@@ -42,12 +42,13 @@ profiles:
     tools:
       - list_dir
       - read_file
+      - read_many_files
       - apply_search_replace
       - write_file
       - file_search
       - ripgrep_search
       - execute_command
-      - write_todos
+      - write_update_todos
     prompt: prompts/coder.md
 
   default_planner:
@@ -55,6 +56,7 @@ profiles:
     tools:
       - list_dir
       - read_file
+      - read_many_files
       - file_search
       - ripgrep_search
       - submit_plan
@@ -66,6 +68,7 @@ profiles:
     tools:
       - list_dir
       - read_file
+      - read_many_files
       - file_search
       - ripgrep_search
       - submit_plan
@@ -77,12 +80,13 @@ profiles:
     tools:
       - list_dir
       - read_file
+      - read_many_files
       - apply_search_replace
       - write_file
       - file_search
       - ripgrep_search
       - execute_command
-      - write_todos
+      - write_update_todos
     prompt: prompts/coder.md
 
 default_profile: 
