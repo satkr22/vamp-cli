@@ -3,24 +3,25 @@ import sys
 import logging
 from pathlib import Path
 
+from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.config.loader import load_config
-from vamp_cli.llm.router import ModelRouter
-from vamp_cli.tools.registry import ToolRegistry
+from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.prompts.prompts import PromptStore
-from vamp_cli.agent.runtime.runtime import AgentRuntime
+
+from vamp_cli.sandbox.terminal import Terminal
+from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
+
+from vamp_cli.llm.router import ModelRouter
 from vamp_cli.llm.adapter_registry import AdapterRegistry
 from vamp_cli.llm.usage import UsageTracker, _UsageCallback
 
 from vamp_cli.tools.files import FileTools
+from vamp_cli.tools.diagnostic import DiagnosticTools
 from vamp_cli.tools.execute_cmd import ExecuteCommandTool
 from vamp_cli.tools.tools_classes import *
+from vamp_cli.tools.registry import ToolRegistry
 
-from vamp_cli.workspace.workspace import Workspace
-from vamp_cli.utils.ignore import IgnoreMatcher
-from vamp_cli.tools.diagnostic import DiagnosticTools
-from vamp_cli.sandbox.terminal import Terminal
-from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
-
+from vamp_cli.agent.runtime.runtime import AgentRuntime
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
 from vamp_cli.agent.status import AgentStatus, FeedbackResponse
@@ -29,9 +30,9 @@ from vamp_cli.agent.context_sync import mode_switch_sync
 
 from vamp_cli.logging_setup.logging_setup import setup
 
+from langgraph.types import Command
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import Command
 
 # log = logging.getLogger(__name__)
 
