@@ -3,7 +3,7 @@ from langchain_core.messages import SystemMessage, BaseMessage
 def mode_switch_sync(
     prev_mode: str,
     new_mode: str,
-    last_state: dict|None = None,
+    last_state = None,
 ) -> dict:
     """Return payload additions to inject when switching modes.
     Returns {} if there is nothing to sync.

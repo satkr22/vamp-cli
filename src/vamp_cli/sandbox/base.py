@@ -4,11 +4,11 @@ from vamp_cli.sandbox.result import CommandResult
 class Sandbox(ABC):
 
     @abstractmethod
-    def start(self) -> None:
+    async def start(self) -> None:
         ...
 
     @abstractmethod
-    def execute(
+    async def execute(
         self,
         command: str,
         cwd: str = "/workspace",
@@ -18,5 +18,5 @@ class Sandbox(ABC):
         ...
 
     @abstractmethod
-    def stop(self) -> None:
+    async def stop(self) -> None:
         ...

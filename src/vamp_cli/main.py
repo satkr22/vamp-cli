@@ -1,7 +1,10 @@
 import os
 import sys
 import logging
+import asyncio
 from pathlib import Path
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
 
 from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.config.loader import load_config
@@ -10,6 +13,7 @@ from vamp_cli.prompts.prompts import PromptStore
 
 from vamp_cli.sandbox.terminal import Terminal
 from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
+from vamp_cli.sandbox.manager import SandboxManager
 
 from vamp_cli.llm.router import ModelRouter
 from vamp_cli.llm.adapter_registry import AdapterRegistry
@@ -24,8 +28,7 @@ from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.agent.runtime.runtime import AgentRuntime
 from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
-from vamp_cli.agent.status import AgentStatus, FeedbackResponse
-from vamp_cli.agent.state import AgentState
+from vamp_cli.agent.status import FeedbackResponse
 from vamp_cli.agent.context_sync import mode_switch_sync
 
 from vamp_cli.logging_setup.logging_setup import setup
@@ -38,7 +41,7 @@ from langchain_core.runnables import RunnableConfig
 
 PROJECT_DIR = str(Path.cwd())
 
-def build_startup():
+async def build_startup():
     
     # --- services ---------------------------------------------------------
     
@@ -46,14 +49,18 @@ def build_startup():
     ignore = IgnoreMatcher(repo_root=str(workspace.root))
     diagnostic = DiagnosticTools(workspace=workspace)
     sandbox_config = SandboxConfig()
-    d_sandbox = DockerSandbox(workspace, sandbox_config)
+    # d_sandbox = DockerSandbox(workspace, sandbox_config)
+    d_sandbox = SandboxManager(sandbox_config)
+    
     try:
-        d_sandbox.start()
+        # d_sandbox.start()
+        sandbox = await d_sandbox.create(workspace)
     except Exception as e:
         print(f"\n\nDocker not running. Please start docker.\n\n")
         sys.exit(0)
     
-    terminal = Terminal(sandbox=d_sandbox)
+   
+    terminal = Terminal(sandbox=sandbox)
     
     file_tools = FileTools(
         workspace=workspace,
@@ -86,13 +93,13 @@ def build_startup():
     return registry, d_sandbox
 
 
-def create_runtime():
+async def create_runtime():
 
         config = load_config(path="src/vamp_cli/config/config.yaml")
         
         adapter = AdapterRegistry()
 
-        tool_registry, sandbox = build_startup()
+        tool_registry, sandbox = await build_startup()
 
         prompt_store = PromptStore(hot_reload=True)
 
@@ -108,11 +115,13 @@ def create_runtime():
             prompt_store=prompt_store,
         ), tool_registry, sandbox
         
-def main():
+async def main():
     
     # setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
     
-    agent_runtime, tool_registry, sandbox = create_runtime()     
+    agent_runtime, tool_registry, sandbox = await create_runtime()  
+    
+       
     
     coder_profile = agent_runtime.resolve(AgentRole.CODER)
     planner_profile = agent_runtime.resolve(AgentRole.PLANNER)
@@ -126,159 +135,173 @@ def main():
     # Session configuration context tracking thread
     session_config: RunnableConfig = {"configurable": {"thread_id": "interactive_vamp_cli_session"}}
     
+    session = PromptSession()
+    
     print("\nVAMP-CLI Agent Workspace Initialized.")
     print("Type 'exit' or 'quit' to exit this and clear docker instances safely.\n")
 
     is_session_started = False
     pending_command = None
-    last_state: dict | None = None
+    last_state = None
     current_mode: str  = "normal"
     
     while True:
         try:
-            # 0. user selects the mode:
-            if pending_command is None:
-                u_mode = input("\nSelect Mode: Plan or Normal\nType Choice: ").strip().lower()
-                
-                if u_mode not in ["plan", "normal"]:
-                    print("Type the correct mode spelling.")
-                    continue
-                
-                new_mode = u_mode
+            with patch_stdout():
+                # 0. user selects the mode:
+                if pending_command is None:
+                    u_mode = (await session.prompt_async(
+                        "Select Mode [plan/normal]: "
+                    )).strip().lower()
                     
-                # 1. get the query from the user
-                user_input = input("\nYou: ").strip()
-                if not user_input:
-                    continue
-                if user_input.lower() in ["exit", "quit"]:
-                    print("Stopping active workspace containers...")
-                    sandbox.stop()
-                    sys.exit(0)
-            
-                # 2. Build or pass updates to the thread state
-                if not is_session_started:
-                    # first message so initialize all seed states
-                    payload = {
-                            
-                        "planner_messages": [
-                            SystemMessage(content=planner_profile.system_prompt),
-                            HumanMessage(content=user_input)
-                        ],
-                        "coder_messages": [
-                            SystemMessage(content=coder_profile.system_prompt),
-                            HumanMessage(content=user_input)
-                        ],
-                        "task": user_input,
-                        "mode": new_mode,
-                        "plan": "",
-                        "requires_execution": False,
-                        "is_plan_injected": False,
-                        "todo": [],
-                        "iteration": 0,
-                    }
-                    is_session_started = True
-                else:
-                    # recurring turns
+                    if u_mode not in ["plan", "normal"]:
+                        print("Type the correct mode spelling.")
+                        continue
                     
-                    # CONTEXT SYNC on mode switch
-                    sync = mode_switch_sync(
-                        prev_mode=current_mode,
-                        new_mode=new_mode,
-                        last_state=last_state,
-                    )
-                    
-                    message_type = "planner_messages" if new_mode == "plan" else "coder_messages"
-                    
-                    payload = {
-                        message_type: 
-                            sync.get(message_type, []) + [HumanMessage(content=user_input)],
-                            
-                        "mode": new_mode
-                    }
-                    
-                    # force a fresh plan when moving from normal -> plan
-                    if new_mode == "plan":
-                        payload["is_plan_injected"] = False
-                    
-                    # dropping stale plan when moving from plan -> normal
-                    if new_mode == "normal" and current_mode == "plan":
-                        payload["plan"] = ""
+                    new_mode = u_mode
                         
-                current_mode = new_mode
+                    # 1. get the query from the user
+                    user_input = (await session.prompt_async("You: ")).strip()
+                    if not user_input:
+                        continue
+                    if user_input.lower() in ["exit", "quit"]:
+                        print("Stopping active workspace containers...")
+                        await sandbox.destroy()
+                        return
+                
+                    # 2. Build or pass updates to the thread state
+                    if not is_session_started:
+                        # first message so initialize all seed states
+                        payload = {
+                                
+                            "planner_messages": [
+                                SystemMessage(content=planner_profile.system_prompt),
+                                HumanMessage(content=user_input)
+                            ],
+                            "coder_messages": [
+                                SystemMessage(content=coder_profile.system_prompt),
+                                HumanMessage(content=user_input)
+                            ],
+                            "task": user_input,
+                            "mode": new_mode,
+                            "plan": "",
+                            "requires_execution": False,
+                            "is_plan_injected": False,
+                            "todo": [],
+                            "iteration": 0,
+                        }
+                        is_session_started = True
+                    else:
+                        # recurring turns
+                        
+                        # CONTEXT SYNC on mode switch
+                        sync = mode_switch_sync(
+                            prev_mode=current_mode,
+                            new_mode=new_mode,
+                            last_state=last_state,
+                        )
+                        
+                        message_type = "planner_messages" if new_mode == "plan" else "coder_messages"
+                        
+                        payload = {
+                            message_type: 
+                                sync.get(message_type, []) + [HumanMessage(content=user_input)],
+                                
+                            "mode": new_mode
+                        }
+                        
+                        # force a fresh plan when moving from normal -> plan
+                        if new_mode == "plan":
+                            payload["is_plan_injected"] = False
+                        
+                        # dropping stale plan when moving from plan -> normal
+                        if new_mode == "normal" and current_mode == "plan":
+                            payload["plan"] = ""
+                            
+                    current_mode = new_mode
 
-                    
-            else:
-                payload = pending_command
-                pending_command = None 
-            
-            # 2. Fire execution step
-            result = graph.invoke(payload, config=session_config) # type: ignore
-            
-            # cache full state for next switch
-            last_state = result
-            
-            # interrupt handling
-            
-            # 3. Handle runtime verification interrupts
-            state_snapshot = graph.get_state(session_config)
-            
-            active_interrupts = getattr(state_snapshot, "interrupts", [])
-            
-            if not active_interrupts and state_snapshot.tasks:
-                # check inside individual graph task state frames
-                for task in state_snapshot.tasks:
-                    if getattr(task, "interrupts", None):
-                        active_interrupts = task.interrupts
-                        break
-                    
-            if active_interrupts:
-                # Safe structure extraction 
-                raw_interrupt = active_interrupts[0]
-                checkpoint_data = getattr(raw_interrupt, "value", raw_interrupt)
-                
-                print("\n" + "*" * 40)
-                print("SECURITY VERIFICATION INTERCEPTED")
-                
-                if checkpoint_data.get('implementation_permission'): # type: ignore
-                    print(f"\nPlan:\n\n{checkpoint_data.get('plan', '')}") # type: ignore
-                else:   
-                    print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
-                    print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
-                    
-                print(f"System Message:   {checkpoint_data.get('warning', '')}") # type: ignore
-                print("*" * 40 + "\n")
-                
-                choice = input("Do you authorize the above ask? (yes/no): ").strip().lower()
-                
-                if choice in ["y", "yes"]:
-                    print("Authorized. Continuing execution...")
-                    # Command unpauses the graph right where it froze, passing back the approval dict
-                    user_response = FeedbackResponse(approved=True)
-                    
-                    pending_command = Command(resume=user_response)
-                    
+                        
                 else:
-                    reason = input("Provide rejection reasoning/feedback directly to the model: ").strip()
-                    
-                    print("Blocked. Returning execution exception back to agent history...")
-                    
-                    user_response = FeedbackResponse(approved=False, reason=reason)
-                    
-                    pending_command = Command(resume=user_response)
-            else:
-                # 4. Print out the AI's final turn response text
-                active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
+                    payload = pending_command
+                    pending_command = None 
                 
-                if result.get(active_log):
-                    last_msg = result[active_log][-1]
-                    if isinstance(last_msg, AIMessage) and last_msg.content:
-                        print(f"\nAgent:\n{last_msg.content}")    
+                # 2. Fire execution step
+                result = await graph.ainvoke(payload, config=session_config) # type: ignore
+                
+                # cache full state for next switch
+                last_state = result
+                
+                # interrupt handling
+                
+                # 3. Handle runtime verification interrupts
+                state_snapshot = await graph.aget_state(session_config)
+                
+                active_interrupts = getattr(state_snapshot, "interrupts", [])
+                
+                if not active_interrupts and state_snapshot.tasks:
+                    # check inside individual graph task state frames
+                    for task in state_snapshot.tasks:
+                        if getattr(task, "interrupts", None):
+                            active_interrupts = task.interrupts
+                            break
+                        
+                if active_interrupts:
+                    # Safe structure extraction 
+                    raw_interrupt = active_interrupts[0]
+                    checkpoint_data = getattr(raw_interrupt, "value", raw_interrupt)
+                    
+                    print("\n" + "*" * 40)
+                    print("SECURITY VERIFICATION INTERCEPTED")
+                    
+                    if checkpoint_data.get('implementation_permission'): # type: ignore
+                        print(f"\nPlan:\n\n{checkpoint_data.get('plan', '')}") # type: ignore
+                    else:   
+                        print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
+                        print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
+                        
+                    print(f"System Message:   {checkpoint_data.get('warning', '')}") # type: ignore
+                    print("*" * 40 + "\n")
+                    
+                    choice = (await session.prompt_async(
+                        "Do you authorize the above ask? (yes/no): "
+                    )).strip().lower()
+                    
+                    if choice in ["y", "yes"]:
+                        print("Authorized. Continuing execution...")
+                        # Command unpauses the graph right where it froze, passing back the approval dict
+                        user_response = FeedbackResponse(approved=True)
+                        
+                        pending_command = Command(resume=user_response)
+                        
+                    else:
+                        reason = (await session.prompt_async(
+                            "Reason: "
+                        )).strip()
+                        
+                        print("Blocked. Returning execution exception back to agent history...")
+                        
+                        user_response = FeedbackResponse(approved=False, reason=reason)
+                        
+                        pending_command = Command(resume=user_response)
+                else:
+                    # 4. Print out the AI's final turn response text
+                    active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
+                    
+                    if result.get(active_log):
+                        last_msg = result[active_log][-1]
+                        if isinstance(last_msg, AIMessage) and last_msg.content:
+                            print(f"\nAgent:\n{last_msg.content}")    
+        except KeyboardInterrupt:
+            print("\nInterrupted — stopping sandbox.")
+            await sandbox.destroy()
+            return
         except Exception as e:
-            sandbox.stop()
+            await sandbox.destroy()
             print(f"[runtime error] {e}")
+            return
        
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
     
     
 

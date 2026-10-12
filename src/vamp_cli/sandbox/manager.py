@@ -10,7 +10,7 @@ class SandboxManager:
         self.config = config
         self.sandbox = None
 
-    def create(self, workspace: Workspace) -> Sandbox:
+    async def create(self, workspace: Workspace) -> Sandbox:
         if self.sandbox is not None:
             raise RuntimeError("Sandbox already exists")
 
@@ -19,13 +19,13 @@ class SandboxManager:
             config=self.config,
         )
 
-        self.sandbox.start()
+        await self.sandbox.start()
 
         return self.sandbox
 
-    def destroy(self):
+    async def destroy(self):
         if self.sandbox is None:
             return
 
-        self.sandbox.stop()
+        await self.sandbox.stop()
         self.sandbox = None

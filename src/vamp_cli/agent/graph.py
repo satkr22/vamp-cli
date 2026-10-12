@@ -41,7 +41,7 @@ def should_continue(state: AgentState) -> Literal["tools", "__end__"]:
 def route_after_planner(state):
     
     last = state["planner_messages"][-1]
-    if type(last) == ToolMessage:
+    if isinstance(last, ToolMessage):
         last = state["planner_messages"][-2]
     
     if last.tool_calls and not any(
