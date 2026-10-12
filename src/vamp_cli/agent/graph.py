@@ -49,7 +49,7 @@ def route_after_planner(state):
     ):
         return "tools"
 
-    if state.get("requires_execution", True):
+    if state.get("requires_execution"):
         return "coder"
 
     return "__end__"

@@ -170,7 +170,7 @@ def main():
                         "task": user_input,
                         "mode": new_mode,
                         "plan": "",
-                        "requires_execution": True,
+                        "requires_execution": False,
                         "is_plan_injected": False,
                         "todo": [],
                         "iteration": 0,
@@ -237,12 +237,17 @@ def main():
                 
                 print("\n" + "*" * 40)
                 print("SECURITY VERIFICATION INTERCEPTED")
-                print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
-                print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
+                
+                if checkpoint_data.get('implementation_permission'): # type: ignore
+                    print(f"\nPlan:\n\n{checkpoint_data.get('plan', '')}") # type: ignore
+                else:   
+                    print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
+                    print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
+                    
                 print(f"System Message:   {checkpoint_data.get('warning', '')}") # type: ignore
                 print("*" * 40 + "\n")
                 
-                choice = input("Do you authorize this execution run? (yes/no): ").strip().lower()
+                choice = input("Do you authorize the above ask? (yes/no): ").strip().lower()
                 
                 if choice in ["y", "yes"]:
                     print("Authorized. Continuing execution...")
@@ -262,6 +267,7 @@ def main():
             else:
                 # 4. Print out the AI's final turn response text
                 active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
+                
                 if result.get(active_log):
                     last_msg = result[active_log][-1]
                     if isinstance(last_msg, AIMessage) and last_msg.content:
@@ -279,7 +285,7 @@ if __name__ == "__main__":
 
 
 
-
+# how to make sandbox more secure for this project??
     
 # content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
 

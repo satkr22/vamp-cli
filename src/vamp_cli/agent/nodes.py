@@ -32,7 +32,7 @@ def create_planner_node(model: Runnable):
         
         messages_to_return = [response]
         plan = response.content
-        requires_execution = True
+        requires_execution = False
         
         for tc in (response.tool_calls or []):
             if tc["name"] == "submit_plan":
@@ -46,11 +46,27 @@ def create_planner_node(model: Runnable):
                 )
                 args = tc.get("args") or {}
                 plan = args.get("plan", plan)
-                requires_execution = bool(args.get("requires_execution", True))
+                # requires_execution = args.get("requires_execution")
+                # if requires_execution == False:
+                #     break
+                
+                checkpoint_payload = {
+                    "implementation_permission": True,
+                    "plan": plan,
+                    "warning": "Asking before implementing this plan"
+                }
+                    
+                # execution halts here
+                user_feedback: FeedbackResponse = interrupt(value=checkpoint_payload, response_schema=FeedbackResponse)
+                   
+                if user_feedback.approved == False:
+                    requires_execution = False
+                elif user_feedback.approved == True:
+                    requires_execution = True
+                    
                 break
         
         print("\n\nPLANNER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
-        print(".\n.\n.\n", plan)
         
         return {
             "planner_messages": messages_to_return,
@@ -58,8 +74,6 @@ def create_planner_node(model: Runnable):
             "requires_execution": requires_execution,
             "iteration": state["iteration"] + 1,
         }
-    # print("#"*50)
-    # print("LEAVING PLANNER NODE")
     return planner_node
 
 
