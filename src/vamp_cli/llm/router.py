@@ -191,9 +191,11 @@ class ModelRouter:
 
         direct = {k: v for k, v in cfg.params.items() if k in _DIRECT_PARAMS}
         extra = {k: v for k, v in cfg.params.items() if k not in _DIRECT_PARAMS}
+        extra["stream_options"] = {"include_usage": True}
 
         kwargs: dict[str, Any] = {
             "model": cfg.model,
+            "streaming": True,
             **direct,
         }
 

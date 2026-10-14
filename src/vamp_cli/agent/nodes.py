@@ -18,18 +18,12 @@ from vamp_cli.agent.instructions import TODO_INSTRUCTIONS, PLAN_INSTRUCTIONS
 def create_planner_node(model: Runnable):
 
     async def planner_node(state: AgentState):
-        # print("#"*50)
-        # print("INSIDE PLANNER NODE")
         # The planner gets the same model or different model (if user as configured for planner explicitly) interface,
         # with a restricted read-only tool registry.
 
         messages = state["planner_messages"]
 
-        # print("#"*50)
-        # print("INSIDE PLANNER NODE JUST BEFORE INVOKE")
         response = await model.ainvoke(messages)
-        # print("#"*50)
-        # print("INSIDE PLANNER NODE JUST AFTER INVOKE")
         
         messages_to_return = [response]
         plan = response.content
@@ -47,9 +41,6 @@ def create_planner_node(model: Runnable):
                 )
                 args = tc.get("args") or {}
                 plan = args.get("plan", plan)
-                # requires_execution = args.get("requires_execution")
-                # if requires_execution == False:
-                #     break
                 
                 checkpoint_payload = {
                     "implementation_permission": True,
@@ -66,8 +57,8 @@ def create_planner_node(model: Runnable):
                     requires_execution = True
                     
                 break
-        
-        print("\n\nPLANNER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
+        if response.tool_calls:
+            print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
         
         return {
             "planner_messages": messages_to_return,
@@ -109,8 +100,9 @@ def create_agent_node(model: Runnable):
                 )
         
         response: AIMessage = await model.ainvoke(message_to_send)
-
-        print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
+        
+        if response.tool_calls:
+            print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
         
         return {
             "coder_messages": [response],
@@ -125,17 +117,7 @@ def create_tool_node(tool_registry: ToolRegistry):
 
     async def tool_node(state: AgentState):
         
-        # print("tool_node: mode=", state["mode"])
-        # print("  coder_messages[-1]   =", type(state["coder_messages"][-1]).__name__)
-        # print("  planner_messages[-1] =", type(state["planner_messages"][-1]).__name__)
-        
-        # print("#"*50)
-        # print("INSIDE TOOL NODE")
-        
         message_type = "planner_messages" if state["mode"] == "plan" else "coder_messages"
-        
-        # if not isinstance(state[message_type][-1], AIMessage):
-        #     message_type = "planner_messages"
 
         last_message = state[message_type][-1]
         
@@ -149,12 +131,10 @@ def create_tool_node(tool_registry: ToolRegistry):
         tool_messages:list[ToolMessage] = []
         todo_update = None
 
-        # print("messaeg_type: ", message_type)
         for tool_call in last_message.tool_calls: # type: ignore
 
             tool_name = tool_call["name"]
             tool_args = tool_call.get("args") or {}
-            
             
             # human in the loop checkpoint
             
@@ -197,7 +177,6 @@ def create_tool_node(tool_registry: ToolRegistry):
                             status="error"
                         )
                     )
-                    # print("command skipped")
                     continue # Skip actual execution of this tool call
             
             # Proceed safely with execution if approved or harmless command    
@@ -206,15 +185,6 @@ def create_tool_node(tool_registry: ToolRegistry):
             except Exception as e:
                 result = {"error": f"Tool '{tool_name}' failed: {str(e)}"}
                   
-            # try:
-            #     tool_obj = tool_registry.get_tool(tool_name)[tool_name]
-            #     result = tool_obj.run(**tool_args)
-
-            # except Exception as e:
-            #     result = {
-            #         "error": f"Tool '{tool_name}' failed: {str(e)}"
-            #     }
-                
             # intercept the todo tool and write into state
             if tool_name == "write_update_todos" and isinstance(result, str):
                 try:
@@ -240,8 +210,6 @@ def create_tool_node(tool_registry: ToolRegistry):
         return update
 
     return tool_node
-
-
 
 
 
