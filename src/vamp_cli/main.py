@@ -3,6 +3,7 @@ import sys
 import logging
 import asyncio
 from pathlib import Path
+from typing import Any
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 
@@ -40,6 +41,11 @@ from langchain_core.runnables import RunnableConfig
 # log = logging.getLogger(__name__)
 
 PROJECT_DIR = str(Path.cwd())
+
+def create(event_type: str, data: dict[str, Any]) -> str:
+    """Serializes events into structured strings"""
+    return json.dumps({"type": event_type, **data})
+
 
 async def build_startup():
     
@@ -114,6 +120,73 @@ async def create_runtime():
             tool_registry=tool_registry,
             prompt_store=prompt_store,
         ), tool_registry, sandbox
+        
+        
+async def streaming(graph, payload: dict | Command, session_config: RunnableConfig) -> Any:
+    
+    last_node = None
+    current_tool_id = None
+    
+    
+    print("\nAgent: \n", end="", flush=True)
+    
+    async for event in graph.astream_events(payload, config=session_config, version="v2"):
+        kind = event["event"]
+        name = event["name"]
+        
+        # print("\nevent kind", kind, end="\n", flush=True)
+        # print("event name", name)
+        
+        # Track which graph component or tool node is actively processing
+        if "metadata" in event and "langgraph_node" in event["metadata"]:
+            last_node = event["metadata"]["langgraph_node"]
+            
+        # A. CAPTURE CHAT MODEL STREAM CHUNKS (Final Output & Reasoning)
+        if kind == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            
+            if hasattr(chunk, "reasoning_content") and chunk.reasoning_content:
+                print(f"\r[Thinking_1]: {chunk.reasoning_content}", end="", flush=True)
+                
+            elif "reasoning_content" in chunk.additional_kwargs:
+                print(f"\r[Thinking_2]: {chunk.additional_kwargs['reasoning_content']}", end="", flush=True)
+                
+            elif "reasoning" in chunk.additional_kwargs:
+                print(f"\r[Thinking_3]: {chunk.additional_kwargs['reasoning']}", end="", flush=True)
+                
+            # 2. Capture Final Human-Facing Markdown Text Response
+            elif chunk.content:
+                print(chunk.content, end="", flush=True)
+            
+            # 3. Capture Live Tool
+                if chunk.tool_call_chunks:
+                    for tc_chunk in chunk.tool_call_chunks:
+                        # When a brand new tool frame begins generating
+                        if tc_chunk.get("name"):
+                            print(f"\n [Preparing Tool]: {tc_chunk['name']}(", end="", flush=True)
+                        # Stream the dynamic parameters drop across your terminal canvas
+                        if tc_chunk.get("args"):
+                            print(tc_chunk["args"], end="", flush=True)
+                            
+        # B. CAPTURE TOOL EXECUTION TIMELINE (Sandbox Invocations & File Access)
+        elif kind == "on_tool_start":
+            print(f") -> Executing task target inside sandbox environment...")
+                        
+        elif kind == "on_tool_end":
+            # Prints confirmation when the localized processing closes out safely
+            output_snippet = str(event['data']['output'])[:120]
+            print(f"[Tool Finished]: Returned response segment: {output_snippet}...")
+            
+    # print("\nstreaming end")
+    print("\n")         
+           
+    
+    return 1
+    
+        
+        
+        
+        
 
 async def main():
     
@@ -138,6 +211,8 @@ async def main():
     session = PromptSession()
     
     print("\nVAMP-CLI Agent Workspace Initialized.")
+    
+    print("Type /mode to select normal or plan mode\n")
     print("Type 'exit' or 'quit' to exit this and clear docker instances safely.\n")
 
     is_session_started = False
@@ -150,16 +225,6 @@ async def main():
             with patch_stdout():
                 # 0. user selects the mode:
                 if pending_command is None:
-                    u_mode = (await session.prompt_async(
-                        "Select Mode [plan/normal]: "
-                    )).strip().lower()
-                    
-                    if u_mode not in ["plan", "normal"]:
-                        print("Type the correct mode spelling.")
-                        continue
-                    
-                    new_mode = u_mode
-                        
                     # 1. get the query from the user
                     user_input = (await session.prompt_async("You: ")).strip()
                     if not user_input:
@@ -168,6 +233,24 @@ async def main():
                         print("Stopping active workspace containers...")
                         await sandbox.destroy()
                         return
+                    
+                    u_mode = "normal"
+                    
+                    if user_input == "/mode":
+                        u_mode = (await session.prompt_async(
+                            "Select Mode [plan/normal]: "
+                        )).strip().lower()
+                        
+                        if u_mode not in ["plan", "normal"]:
+                            print("Type the correct mode spelling.")
+                            print("Mode not selected. try again...")
+                            continue
+                            
+                        print(f"{u_mode} mode selected. Continue...")
+                        continue
+                        
+                    new_mode = u_mode
+                        
                 
                     # 2. Build or pass updates to the thread state
                     if not is_session_started:
@@ -226,15 +309,21 @@ async def main():
                     pending_command = None 
                 
                 # 2. Fire execution step
-                result = await graph.ainvoke(payload, config=session_config) # type: ignore
+                
+                d = await streaming(graph, payload, session_config)
+                
+                # result = await graph.ainvoke(payload, config=session_config) # type: ignore
                 
                 # cache full state for next switch
-                last_state = result
                 
                 # interrupt handling
                 
                 # 3. Handle runtime verification interrupts
                 state_snapshot = await graph.aget_state(session_config)
+                
+                result = state_snapshot.values
+                
+                last_state = result
                 
                 active_interrupts = getattr(state_snapshot, "interrupts", [])
                 
@@ -285,12 +374,13 @@ async def main():
                         pending_command = Command(resume=user_response)
                 else:
                     # 4. Print out the AI's final turn response text
-                    active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
+                    # active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
                     
-                    if result.get(active_log):
-                        last_msg = result[active_log][-1]
-                        if isinstance(last_msg, AIMessage) and last_msg.content:
-                            print(f"\nAgent:\n{last_msg.content}")    
+                    # if result.get(active_log):
+                    #     last_msg = result[active_log][-1]
+                    #     if isinstance(last_msg, AIMessage) and last_msg.content:
+                    #         print(f"\nAgent:\n{last_msg.content}")    
+                    pass
         except KeyboardInterrupt:
             print("\nInterrupted — stopping sandbox.")
             await sandbox.destroy()

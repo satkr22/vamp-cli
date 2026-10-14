@@ -1,10 +1,9 @@
 import json
 import asyncio
-from typing import Any, Optional
-from pydantic import BaseModel
+from typing import Any
 
 from langgraph.types import interrupt
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, BaseMessage
 
 from vamp_cli.tools.registry import ToolRegistry
@@ -17,13 +16,14 @@ from vamp_cli.agent.instructions import TODO_INSTRUCTIONS, PLAN_INSTRUCTIONS
 
 def create_planner_node(model: Runnable):
 
-    async def planner_node(state: AgentState):
+    async def planner_node(state: AgentState, config: RunnableConfig):
         # The planner gets the same model or different model (if user as configured for planner explicitly) interface,
         # with a restricted read-only tool registry.
 
         messages = state["planner_messages"]
 
-        response = await model.ainvoke(messages)
+        # response = await model.ainvoke(messages)
+        response = await model.with_config(config).ainvoke(messages)
         
         messages_to_return = [response]
         plan = response.content
@@ -57,8 +57,14 @@ def create_planner_node(model: Runnable):
                     requires_execution = True
                     
                 break
+        # if response.tool_calls:
+        #     print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
+        
         if response.tool_calls:
-            print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
+            print(f"\n[coder] calling:")
+            for tc in response.tool_calls:
+                print("Tool: ", tc['name'])
+                print("Arguments: ", tc['args'])
         
         return {
             "planner_messages": messages_to_return,
@@ -71,7 +77,7 @@ def create_planner_node(model: Runnable):
 
 def create_agent_node(model: Runnable):
 
-    async def agent_node(state: AgentState):
+    async def agent_node(state: AgentState, config: RunnableConfig):
         
         message_to_send = list(state["coder_messages"])
         
@@ -100,9 +106,13 @@ def create_agent_node(model: Runnable):
                 )
         
         response: AIMessage = await model.ainvoke(message_to_send)
+        response: AIMessage = await model.with_config(config).ainvoke(message_to_send)
         
         if response.tool_calls:
-            print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
+            print(f"\n[coder] calling:")
+            for tc in response.tool_calls:
+                print("Tool: ", tc['name'])
+                print("Arguments: ", tc['args'])
         
         return {
             "coder_messages": [response],
