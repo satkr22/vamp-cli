@@ -9,8 +9,10 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.config.loader import load_config
-from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.prompts.prompts import PromptStore
+
+from vamp_cli.utils.ignore import IgnoreMatcher
+from vamp_cli.utils.token_tracker import Token_Tracker
 
 from vamp_cli.sandbox.terminal import Terminal
 from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
@@ -122,73 +124,101 @@ async def create_runtime():
         ), tool_registry, sandbox
         
         
-async def streaming(graph, payload: dict | Command, session_config: RunnableConfig) -> Any:
+async def streaming(
+    graph, 
+    payload: dict | Command, 
+    session_config: RunnableConfig
+) -> Any:
     
-    last_node = None
-    current_tool_id = None
+    call_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     
+    header_printed = False
+    thinking_open = False
     
-    print("\nAgent: \n", end="", flush=True)
+    if isinstance(payload, dict):
+        print("mode:", payload["mode"])
     
-    async for event in graph.astream_events(payload, config=session_config, version="v2"):
-        kind = event["event"]
-        name = event["name"]
+    try:
         
-        # print("\nevent kind", kind, end="\n", flush=True)
-        # print("event name", name)
-        
-        # Track which graph component or tool node is actively processing
-        if "metadata" in event and "langgraph_node" in event["metadata"]:
-            last_node = event["metadata"]["langgraph_node"]
+        async for event in graph.astream_events(payload, config=session_config, version="v2"):
+            kind = event["event"]
             
-        # A. CAPTURE CHAT MODEL STREAM CHUNKS (Final Output & Reasoning)
-        if kind == "on_chat_model_stream":
-            chunk = event["data"]["chunk"]
-            
-            if hasattr(chunk, "reasoning_content") and chunk.reasoning_content:
-                print(f"\r[Thinking_1]: {chunk.reasoning_content}", end="", flush=True)
+            if kind == "on_chat_model_start":
+                # First time we know a model will run, print the header.
+                if not header_printed :
+                    print("\nAgent: \n", end="", flush=True)
+                    header_printed  = True
+
+            # capture chat model stream for final output and reasoning
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"]["chunk"]
                 
-            elif "reasoning_content" in chunk.additional_kwargs:
-                print(f"\r[Thinking_2]: {chunk.additional_kwargs['reasoning_content']}", end="", flush=True)
+                # reasoning chunks
+                reasoning_chunk = None
+                if hasattr(chunk, "reasoning_content") and chunk.reasoning_content:
+                    reasoning_chunk = chunk.reasoning_content
+                elif "reasoning_content" in chunk.additional_kwargs:
+                    reasoning_chunk = chunk.additional_kwargs['reasoning_content']
                 
-            elif "reasoning" in chunk.additional_kwargs:
-                print(f"\r[Thinking_3]: {chunk.additional_kwargs['reasoning']}", end="", flush=True)
+                if reasoning_chunk:
+                    if not thinking_open:
+                        print("Thinking:\n", end="", flush=True)
+                        thinking_open = True
+                    print(reasoning_chunk, end="", flush=True)
+                    
+                # 2. capture final human text
+                elif chunk.content:
+                    if thinking_open:
+                        print("\n\nResponse:\n", end="", flush=True)
+                        thinking_open = False
+                    print(chunk.content, end="", flush=True)
                 
-            # 2. Capture Final Human-Facing Markdown Text Response
-            elif chunk.content:
-                print(chunk.content, end="", flush=True)
-            
-            # 3. Capture Live Tool
-                if chunk.tool_call_chunks:
-                    for tc_chunk in chunk.tool_call_chunks:
-                        # When a brand new tool frame begins generating
-                        if tc_chunk.get("name"):
-                            print(f"\n [Preparing Tool]: {tc_chunk['name']}(", end="", flush=True)
-                        # Stream the dynamic parameters drop across your terminal canvas
-                        if tc_chunk.get("args"):
-                            print(tc_chunk["args"], end="", flush=True)
-                            
-        # B. CAPTURE TOOL EXECUTION TIMELINE (Sandbox Invocations & File Access)
-        elif kind == "on_tool_start":
-            print(f") -> Executing task target inside sandbox environment...")
-                        
-        elif kind == "on_tool_end":
-            # Prints confirmation when the localized processing closes out safely
-            output_snippet = str(event['data']['output'])[:120]
-            print(f"[Tool Finished]: Returned response segment: {output_snippet}...")
-            
-    # print("\nstreaming end")
-    print("\n")         
-           
+            elif kind == "on_chat_model_end":
+                output = event["data"].get("output")
+                um = getattr(output, "usage_metadata", None)
+                if um:
+                    call_usage["input_tokens"]  += um.get("input_tokens", 0)
+                    call_usage["output_tokens"] += um.get("output_tokens", 0)
+                    call_usage["total_tokens"]  += um.get("total_tokens", 0)
+                                   
+    except KeyboardInterrupt as e:
+        print("\n[aborted by user]")
+        return call_usage
+    except Exception as e:
+        print ("\n[Some error happened]")
+        return call_usage
     
-    return 1
+    print("\n") 
+    return call_usage
+
     
         
         
+turn_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+turn_open = True
+
+def _add_usage(acc, delta):
+    if not delta:
+        return
+    for k in acc:
+        acc[k] += delta.get(k, 0)    
         
+def _close_turn():
+    global turn_usage, turn_open
+    if not turn_open:
+        return
+    print("Token Usage (this turn):")
+    print(f"  Input : {turn_usage['input_tokens']}")
+    print(f"  Output: {turn_usage['output_tokens']}")
+    print(f"  Total : {turn_usage['total_tokens']}")
+    print()
+    turn_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    turn_open = False
         
 
 async def main():
+    
+    token_tracker = Token_Tracker()
     
     # setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
     
@@ -206,19 +236,25 @@ async def main():
     )
     
     # Session configuration context tracking thread
-    session_config: RunnableConfig = {"configurable": {"thread_id": "interactive_vamp_cli_session"}}
+    session_config: RunnableConfig = {
+        "configurable": {"thread_id": "interactive_vamp_cli_session"},
+        "recursion_limit": 200,
+    }
     
     session = PromptSession()
     
     print("\nVAMP-CLI Agent Workspace Initialized.")
     
-    print("Type /mode to select normal or plan mode\n")
-    print("Type 'exit' or 'quit' to exit this and clear docker instances safely.\n")
+    print("\nType /mode to select normal or plan mode.")
+    
+    print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
 
     is_session_started = False
     pending_command = None
     last_state = None
-    current_mode: str  = "normal"
+    
+    selected_mode: str = "normal"   # user's current choice (changedd by '/mode')
+    executed_mode: str = "normal"   # mode the last graph run used
     
     while True:
         try:
@@ -229,27 +265,26 @@ async def main():
                     user_input = (await session.prompt_async("You: ")).strip()
                     if not user_input:
                         continue
-                    if user_input.lower() in ["exit", "quit"]:
+                    if user_input.lower() in ["/exit", "/quit"]:
                         print("Stopping active workspace containers...")
                         await sandbox.destroy()
                         return
-                    
-                    u_mode = "normal"
-                    
+        
                     if user_input == "/mode":
-                        u_mode = (await session.prompt_async(
+                        picked = (await session.prompt_async(
                             "Select Mode [plan/normal]: "
                         )).strip().lower()
                         
-                        if u_mode not in ["plan", "normal"]:
+                        if picked not in ["plan", "normal"]:
                             print("Type the correct mode spelling.")
                             print("Mode not selected. try again...")
                             continue
-                            
-                        print(f"{u_mode} mode selected. Continue...")
-                        continue
-                        
-                    new_mode = u_mode
+                        selected_mode = picked
+                        print(f"{selected_mode} mode selected. Continue...")
+                        continue    
+                     
+                    token_tracker.start()
+                    new_mode = selected_mode
                         
                 
                     # 2. Build or pass updates to the thread state
@@ -267,19 +302,25 @@ async def main():
                             ],
                             "task": user_input,
                             "mode": new_mode,
-                            "plan": "",
+                            "plan": None,
                             "requires_execution": False,
-                            "is_plan_injected": False,
                             "todo": [],
                             "iteration": 0,
+                            
+                            "_pending_tool_channel": None,
+                            "_pending_tool_calls": [],
+                            "_dangerous_tool_call_ids": [],
+                            "_approved_tool_call_ids": [],
+                            "_denied_tool_call_ids": [],
+                            
                         }
                         is_session_started = True
                     else:
                         # recurring turns
                         
-                        # CONTEXT SYNC on mode switch
+                        # context sync on mode switch
                         sync = mode_switch_sync(
-                            prev_mode=current_mode,
+                            prev_mode=executed_mode,
                             new_mode=new_mode,
                             last_state=last_state,
                         )
@@ -298,10 +339,10 @@ async def main():
                             payload["is_plan_injected"] = False
                         
                         # dropping stale plan when moving from plan -> normal
-                        if new_mode == "normal" and current_mode == "plan":
+                        if new_mode == "normal" and executed_mode == "plan":
                             payload["plan"] = ""
                             
-                    current_mode = new_mode
+                    executed_mode = new_mode
 
                         
                 else:
@@ -309,12 +350,8 @@ async def main():
                     pending_command = None 
                 
                 # 2. Fire execution step
-                
-                d = await streaming(graph, payload, session_config)
-                
-                # result = await graph.ainvoke(payload, config=session_config) # type: ignore
-                
-                # cache full state for next switch
+                usage = await streaming(graph, payload, session_config)
+                token_tracker.add(usage)
                 
                 # interrupt handling
                 
@@ -323,6 +360,7 @@ async def main():
                 
                 result = state_snapshot.values
                 
+                # cache full state for next switch
                 last_state = result
                 
                 active_interrupts = getattr(state_snapshot, "interrupts", [])
@@ -335,56 +373,58 @@ async def main():
                             break
                         
                 if active_interrupts:
-                    # Safe structure extraction 
                     raw_interrupt = active_interrupts[0]
                     checkpoint_data = getattr(raw_interrupt, "value", raw_interrupt)
-                    
+
                     print("\n" + "*" * 40)
-                    print("SECURITY VERIFICATION INTERCEPTED")
-                    
-                    if checkpoint_data.get('implementation_permission'): # type: ignore
+
+                    # plan approval
+                    if checkpoint_data.get("implementation_permission"): # type: ignore
+                        print("PLAN APPROVAL REQUESTED")
                         print(f"\nPlan:\n\n{checkpoint_data.get('plan', '')}") # type: ignore
-                    else:   
-                        print(f"Requested Tool:  {checkpoint_data.get('tool_name', 'Unknown')}") # type: ignore
-                        print(f"Arguments Passed: {json.dumps(checkpoint_data.get('tool_args', {}), indent=2)}") # type: ignore
-                        
-                    print(f"System Message:   {checkpoint_data.get('warning', '')}") # type: ignore
+
+                    # tool approval 
+                    elif checkpoint_data.get("requires_tool_approval"): # type: ignore
+                        print("SECURITY VERIFICATION INTERCEPTED")
+                        calls = checkpoint_data.get("dangerous_calls", []) # type: ignore
+                        print(f"\n{len(calls)} dangerous call(s) flagged; "
+                            f"{checkpoint_data.get('safe_call_count', 0)} safe call(s) will " # type: ignore
+                            f"also run on approval.\n")
+                        for c in calls:
+                            print(f"  Tool: {c['tool_name']}")
+                            print(f"  Args: {json.dumps(c['tool_args'], indent=2)}")
+                            print()
+                        print(f"System Message: {checkpoint_data.get('warning', '')}") # type: ignore
+
+                    else:
+                        # unknown payload — surface raw for debugging
+                        print(f"Unrecognised interrupt payload:\n{checkpoint_data}")
+
                     print("*" * 40 + "\n")
-                    
+
                     choice = (await session.prompt_async(
                         "Do you authorize the above ask? (yes/no): "
                     )).strip().lower()
-                    
-                    if choice in ["y", "yes"]:
+
+                    if choice in ("y", "yes"):
                         print("Authorized. Continuing execution...")
-                        # Command unpauses the graph right where it froze, passing back the approval dict
-                        user_response = FeedbackResponse(approved=True)
-                        
-                        pending_command = Command(resume=user_response)
-                        
+                        pending_command = Command(resume=FeedbackResponse(approved=True))
+                        continue
                     else:
-                        reason = (await session.prompt_async(
-                            "Reason: "
-                        )).strip()
-                        
-                        print("Blocked. Returning execution exception back to agent history...")
-                        
-                        user_response = FeedbackResponse(approved=False, reason=reason)
-                        
-                        pending_command = Command(resume=user_response)
-                else:
-                    # 4. Print out the AI's final turn response text
-                    # active_log = "planner_messages" if current_mode == "plan" else "coder_messages"
-                    
-                    # if result.get(active_log):
-                    #     last_msg = result[active_log][-1]
-                    #     if isinstance(last_msg, AIMessage) and last_msg.content:
-                    #         print(f"\nAgent:\n{last_msg.content}")    
-                    pass
+                        reason = (await session.prompt_async("Reason: ")).strip()
+                        print("Blocked. Returning denial to agent history...")
+                        pending_command = Command(
+                            resume=FeedbackResponse(approved=False, reason=reason)
+                        )
+                        continue
+                
+                token_tracker.close()
+                          
         except KeyboardInterrupt:
-            print("\nInterrupted — stopping sandbox.")
-            await sandbox.destroy()
-            return
+            print("\n[interrupted — returning to prompt]")
+            pending_command = None
+            continue
+        
         except Exception as e:
             await sandbox.destroy()
             print(f"[runtime error] {e}")
@@ -392,23 +432,3 @@ async def main():
        
 if __name__ == "__main__":
     asyncio.run(main())
-    
-    
-
-
-
-
-
-# how to make sandbox more secure for this project??
-    
-# content="run sha256_hash.py in the root dir with an example string and show me the output and do not chabe ay other file at all"
-
-# content="can u create a small python file which will convert a string into a sha-256 key in the root dir of project and also test it with a string example and show me the result and do not chnage any other file at all?"
-
-# content="can you tell me how sandbox is working for this coding agent project??"
-
-# task: str = "read all the tool descpritions and tool whose access you have and give me the details and tell me how sufficient these tools are for a coding agent and do u need more tool to be more efficient coding agent ??"
-
-# task: str = "how is the langgraph configured to achieve plan and normal mode in this project??"
-
-# task: str = "write me a read_many_files tool for the llm and do not change any other code"

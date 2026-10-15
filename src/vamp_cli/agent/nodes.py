@@ -24,55 +24,45 @@ def create_planner_node(model: Runnable):
 
         # response = await model.ainvoke(messages)
         response = await model.with_config(config).ainvoke(messages)
-        
-        messages_to_return = [response]
-        plan = response.content
-        requires_execution = False
-        
-        for tc in (response.tool_calls or []):
-            if tc["name"] == "submit_plan":
-                messages_to_return.append(
-                    ToolMessage(
-                        content=json.dumps({"status": "Plan submitted."}),
-                        tool_call_id=tc["id"],
-                        name="submit_plan",
-                        status="success"
-                    )
-                )
-                args = tc.get("args") or {}
-                plan = args.get("plan", plan)
-                
-                checkpoint_payload = {
-                    "implementation_permission": True,
-                    "plan": plan,
-                    "warning": "Asking before implementing this plan"
-                }
-                    
-                # execution halts here
-                user_feedback: FeedbackResponse = interrupt(value=checkpoint_payload, response_schema=FeedbackResponse)
-                   
-                if user_feedback.approved == False:
-                    requires_execution = False
-                elif user_feedback.approved == True:
-                    requires_execution = True
-                    
-                break
-        # if response.tool_calls:
-        #     print(f"\n[coder] calling: {[tc['name'] for tc in response.tool_calls]}")
+        pending = next(
+            (tc for tc in (response.tool_calls or []) if tc["name"] == "submit_plan"), 
+            None
+        )
         
         if response.tool_calls:
-            print(f"\n[coder] calling:")
+            print(f"\n[planner] calling:")
             for tc in response.tool_calls:
                 print("Tool: ", tc['name'])
                 print("Arguments: ", tc['args'])
         
         return {
-            "planner_messages": messages_to_return,
-            "plan": plan,
-            "requires_execution": requires_execution,
+            "planner_messages": [response],
+            "plan": pending["args"].get("plan") if pending else None,
             "iteration": state["iteration"] + 1,
         }
+    
     return planner_node
+
+
+def create_plan_approval_node(model: Runnable):
+    
+    async def plan_approval_node(state: AgentState, config: RunnableConfig):
+        
+        if not state.get("plan"):
+            return {"requires_execution": False}
+        
+        checkpoint_payload = {
+            "implementation_permission": True,
+            "plan": state["plan"],
+            "warning": "Asking before implementing this plan"
+        }
+                    
+        # execution halts here
+        fb: FeedbackResponse = interrupt(value=checkpoint_payload, response_schema=FeedbackResponse)
+        return {"requires_execution": fb.approved}   
+    
+    return plan_approval_node
+
 
 
 def create_agent_node(model: Runnable):
@@ -81,18 +71,15 @@ def create_agent_node(model: Runnable):
         
         message_to_send = list(state["coder_messages"])
         
-        plan_injected = state.get("is_plan_injected", False)
-        
         if state["mode"] == "plan":
             plan = state["plan"]
             
-            if not plan_injected and plan:
+            if plan:
                 plan_message = SystemMessage(content=f"Here is the project plan:\n{state['plan']}")
                 plan_instruction = SystemMessage(content=PLAN_INSTRUCTIONS)
                 
                 message_to_send += [plan_message] + [plan_instruction]
                 
-                plan_injected = True
                 
                 
         if not state.get("todo"):
@@ -100,13 +87,14 @@ def create_agent_node(model: Runnable):
             
         if state.get("todo"):
             turns_since_update = _turns_since_todo_update(state["coder_messages"])
-            if turns_since_update >= 4:
+            if turns_since_update >= 5:
                 message_to_send.append(
                     SystemMessage(content=_format_todo_reminder(state["todo"]))
                 )
         
-        response: AIMessage = await model.ainvoke(message_to_send)
         response: AIMessage = await model.with_config(config).ainvoke(message_to_send)
+        
+        # print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
         
         if response.tool_calls:
             print(f"\n[coder] calling:")
@@ -116,111 +104,166 @@ def create_agent_node(model: Runnable):
         
         return {
             "coder_messages": [response],
-            "is_plan_injected": plan_injected,
+            # "is_plan_injected": plan_injected,
             "iteration": state["iteration"] + 1,
         }
     return agent_node
 
 
+DANGEROUS_PATTERNS = ("rm ", "rmdir ", "curl ", "wget ", "pip install ", "shutdown", "dd ")
 
-def create_tool_node(tool_registry: ToolRegistry):
+def _is_dangerous(tool_name: str, tool_args: dict) -> bool:
+    is_bash = tool_name == "execute_command" or "execute" in tool_name.lower()
+    if not is_bash:
+        return False
+    cmd = str(tool_args.get("command", "")).lower()
+    return any(p in cmd for p in DANGEROUS_PATTERNS)
 
-    async def tool_node(state: AgentState):
-        
-        message_type = "planner_messages" if state["mode"] == "plan" else "coder_messages"
 
-        last_message = state[message_type][-1]
-        
-        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+def create_tool_classify_node(channel: str):
+    async def tool_classify_node(state: AgentState, config: RunnableConfig):
+        last = state[channel][-1]
+
+        if not isinstance(last, AIMessage) or not last.tool_calls:
             raise RuntimeError(
-                f"tool_node invoked but last {message_type} entry "
-                f"is {type(last_message).__name__} with no tool calls"
+                f"classify_node invoked but last {channel} entry "
+                f"is {type(last).__name__} with no tool calls"
             )
-            
-        
-        tool_messages:list[ToolMessage] = []
+
+        dangerous_ids = [
+            tc["id"]
+            for tc in last.tool_calls
+            if _is_dangerous(tc["name"], tc.get("args") or {})
+        ]
+
+        return {
+            "_pending_tool_channel":    channel,
+            "_pending_tool_calls":      [dict(tc) for tc in last.tool_calls],
+            "_dangerous_tool_call_ids": dangerous_ids,
+            "_approved_tool_call_ids":  [],
+            "_denied_tool_call_ids":    [],
+        }
+
+    return tool_classify_node
+
+
+def create_tool_approve_node():
+    async def tool_approve_node(state: AgentState, config: RunnableConfig):
+        pending       = state.get("_pending_tool_calls", [])
+        dangerous_ids = state.get("_dangerous_tool_call_ids", [])
+        all_ids       = [tc["id"] for tc in pending]
+
+        # No dangerous calls: auto-approve everything, no interrupt.
+        if not dangerous_ids:
+            return {
+                "_approved_tool_call_ids": all_ids,
+                "_denied_tool_call_ids":   [],
+            }
+
+        dangerous_calls = [tc for tc in pending if tc["id"] in dangerous_ids]
+
+        payload = {
+            "requires_tool_approval": True,
+            "dangerous_calls": [
+                {
+                    "tool_call_id": tc["id"],
+                    "tool_name":    tc["name"],
+                    "tool_args":    tc.get("args") or {},
+                }
+                for tc in dangerous_calls
+            ],
+            "safe_call_count": len(pending) - len(dangerous_calls),
+            "warning": (
+                "The following tool calls were flagged as dangerous. "
+                "Approving will execute them (plus all safe calls) exactly once."
+            ),
+        }
+
+        # Halts here. On resume, returns the FeedbackResponse instead of raising.
+        fb: FeedbackResponse = interrupt(value=payload, response_schema=FeedbackResponse)
+
+        safe_ids = [i for i in all_ids if i not in dangerous_ids]
+
+        if fb.approved:
+            return {
+                "_approved_tool_call_ids": safe_ids + dangerous_ids,
+                "_denied_tool_call_ids":   [],
+            }
+        return {
+            "_approved_tool_call_ids": safe_ids,
+            "_denied_tool_call_ids":   dangerous_ids,
+        }
+
+    return tool_approve_node
+
+
+def create_tool_execute_node(tool_registry: ToolRegistry):
+    async def tool_execute_node(state: AgentState, config: RunnableConfig):
+        channel     = state["_pending_tool_channel"]
+        pending     = state.get("_pending_tool_calls", [])
+        approved    = set(state.get("_approved_tool_call_ids", []))
+        denied      = set(state.get("_denied_tool_call_ids", []))
+
+        tool_messages: list[ToolMessage] = []
         todo_update = None
 
-        for tool_call in last_message.tool_calls: # type: ignore
+        for tc in pending:
+            tc_id, tc_name, tc_args = tc["id"], tc["name"], tc.get("args") or {}
 
-            tool_name = tool_call["name"]
-            tool_args = tool_call.get("args") or {}
-            
-            # human in the loop checkpoint
-            
-            is_bash = tool_name == "execute_command" or "execute" in tool_name.lower()
-            
-            contains_danger = False
-            if is_bash:
-                contains_danger = "rm " in str(tool_args.get("command")).lower() or "rmdir " in str(tool_args.get("command")).lower() or "curl " in str(tool_args.get("command")).lower() or "pip install " in str(tool_args.get("command")).lower()
-                
-            
-            if is_bash and contains_danger:
-                # throw out to the ternimal shell loop
-                checkpoint_payload = {
-                    "tool_name": tool_name,
-                    "tool_args": tool_args,
-                    "warning": "CAUTION: Executing terminal system commands, internet access or destructive deletions requires verification."
-                }
-                
-                # execution halts here
-                user_feedback: FeedbackResponse = interrupt(value=checkpoint_payload, response_schema=FeedbackResponse)
-                
-                if user_feedback.approved == False:
-                    reason = user_feedback.reason
-                    if reason is None:
-                        reason = "Human explicitly denied execution authority."
-                    
-                    denial_message = (
-                        f"CRITICAL ACCESS DENIED: The security administrator has EXPLICITLY FORBIDDEN "
-                        f"to execute the denied task in any possible way.\n"
-                        f"Reason: {reason}\n"
-                        f"MANDATE: You are strictly ordered to CEASE all attempts to execute the denied task in any possbile way. Abort this task "
-                        f"immediately and explain this security restriction to the user. do not try to complete this task again. move to another task."
-                    )
-                    
-                    tool_messages.append(
-                        ToolMessage(
-                            content=denial_message,
-                            tool_call_id=tool_call["id"],
-                            name=tool_name,
-                            status="error"
-                        )
-                    )
-                    continue # Skip actual execution of this tool call
-            
-            # Proceed safely with execution if approved or harmless command    
+            if tc_id in denied:
+                tool_messages.append(ToolMessage(
+                    content=(
+                        "CRITICAL ACCESS DENIED: The security administrator has "
+                        "EXPLICITLY FORBIDDEN executing the denied task in any way. "
+                        "MANDATE: cease all attempts to execute the denied task. "
+                        "Abort this task immediately and explain the restriction "
+                        "to the user. Do not retry. Move on to another task."
+                    ),
+                    tool_call_id=tc_id,
+                    name=tc_name,
+                    status="error",
+                ))
+                continue
+
+            if tc_id not in approved:               # defensive — should not happen
+                tool_messages.append(ToolMessage(
+                    content=f"Tool '{tc_name}' was not approved for execution.",
+                    tool_call_id=tc_id, name=tc_name, status="error",
+                ))
+                continue
+
             try:
-                result = await tool_registry.call(tool_name, tool_args)
+                result = await tool_registry.call(tc_name, tc_args)
             except Exception as e:
-                result = {"error": f"Tool '{tool_name}' failed: {str(e)}"}
-                  
-            # intercept the todo tool and write into state
-            if tool_name == "write_update_todos" and isinstance(result, str):
+                result = {"error": f"Tool '{tc_name}' failed: {e}"}
+
+            if tc_name == "write_update_todos" and isinstance(result, str):
                 try:
                     todo_update = json.loads(result)
                 except json.JSONDecodeError:
                     todo_update = None
-                    
+
             string_result = result if isinstance(result, str) else json.dumps(result)
-            
-            tool_messages.append(
-                ToolMessage(
-                    content=string_result,
-                    tool_call_id=tool_call["id"],
-                    name=tool_name,
-                    status="success" if isinstance(result, str) else "error"
-                )
-            )
-        
-        update = {message_type: tool_messages}
+            tool_messages.append(ToolMessage(
+                content=string_result,
+                tool_call_id=tc_id,
+                name=tc_name,
+                status="success" if isinstance(result, str) else "error",
+            ))
+
+        update = {
+            channel: tool_messages,
+            # "_pending_tool_channel":   None,
+            "_pending_tool_calls":     [],
+            "_dangerous_tool_call_ids": [],
+            "_approved_tool_call_ids":  [],
+            "_denied_tool_call_ids":    [],
+        }
         if todo_update is not None:
             update["todo"] = todo_update
-    
         return update
 
-    return tool_node
-
+    return tool_execute_node
 
 
 def _turns_since_todo_update(messages: list[BaseMessage]) -> int:

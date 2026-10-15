@@ -1,4 +1,5 @@
 from enum import Enum
+import operator
 from typing import TypedDict, Annotated, Literal
 
 from langchain_core.messages import BaseMessage
@@ -33,8 +34,22 @@ class AgentState(TypedDict):
     ]
 
     task: str
+    
     mode: Literal["normal", "plan"]
-    plan: str # only generated in plan mode
-    is_plan_injected: bool
+    
+    plan: str | None # only generated in plan mode
+    
     todo: list[TodoItem]
+    
     iteration: int
+    
+    # tool-approval pipeline
+    _pending_tool_channel:   str | None
+    _pending_tool_calls:     list[dict]
+    _dangerous_tool_call_ids: list[str]
+    _approved_tool_call_ids:  list[str]
+    _denied_tool_call_ids:    list[str]
+    
+    
+    
+    
