@@ -25,7 +25,7 @@ class FileTools():
     def list_dir(
         self, 
         path: str, 
-        max_depth: int | None = None
+        max_depth: int = 2
     ) -> dict[str, str | list[tuple[str, str]]]:
         
         res_list = []

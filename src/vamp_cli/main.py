@@ -102,7 +102,7 @@ async def build_startup():
 
 async def create_runtime():
 
-    config = load_config(path="src/vamp_cli/config/config.yaml")
+    config = load_config()
 
     adapter = AdapterRegistry()
 
@@ -137,7 +137,6 @@ async def streaming(
         print("mode:", payload["mode"])
 
     try:
-
         async for event in graph.astream_events(
             payload, config=session_config, version="v2"
         ):
@@ -190,30 +189,6 @@ async def streaming(
 
     print("\n")
     return call_usage
-
-
-turn_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-turn_open = True
-
-
-def _add_usage(acc, delta):
-    if not delta:
-        return
-    for k in acc:
-        acc[k] += delta.get(k, 0)
-
-
-def _close_turn():
-    global turn_usage, turn_open
-    if not turn_open:
-        return
-    print("Token Usage (this turn):")
-    print(f"  Input : {turn_usage['input_tokens']}")
-    print(f"  Output: {turn_usage['output_tokens']}")
-    print(f"  Total : {turn_usage['total_tokens']}")
-    print()
-    turn_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-    turn_open = False
 
 
 async def main():

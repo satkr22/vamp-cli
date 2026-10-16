@@ -12,6 +12,7 @@ class ListDirTool(Tools):
     description = (
         "List the files and directories contained within a workspace directory." 
         "Use this tool when you need to inspect directory structure or discover what exists at a path." 
+        "NOTE: BY DEFAULT ITS MAX DEPTH IS 2(for safetly in very large directories). To recurse more use specific path and max depth."
         "It does not read file contents and does not search inside files."
         "The listing recursively traverses subdirectories unless max_depth is specified." 
         ".gitignore rules are respected, including .gitignore files found inside nested directories. Symbolic links are skipped."
@@ -45,7 +46,7 @@ class ListDirTool(Tools):
     @override
     def run(self, **inputs) -> str:
         path = inputs["path"]
-        max_depth = inputs.get("max_depth")
+        max_depth = inputs.get("max_depth", 2)
         result = self.file_tools.list_dir(path, max_depth)
         return json.dumps(result)
 

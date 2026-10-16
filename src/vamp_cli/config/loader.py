@@ -9,19 +9,19 @@ from pydantic import ValidationError
 
 from vamp_cli.config.schema import AppConfig, ModelConfig
 
-DEFAULT_CONFIG_PATH = "config.yaml"
+CONFIG_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = CONFIG_DIR / "config.yaml"
 
 class ConfigError(ValueError):
     """Raised when configuration is structurally invalid or incomplete."""
 
 
-def load_config(path: str | Path = "config.yaml") -> AppConfig:
+def load_config() -> AppConfig:
     """Load, validate, resolve secrets, and cross-check the YAML config.
 
     This is the only place in the application that reads config.yaml.
     """
-
-    config_path = Path(path).expanduser().resolve()
+    config_path = CONFIG_PATH
 
     if not config_path.is_file():
         raise ConfigError(f"Config file does not exist: {config_path}")
