@@ -145,6 +145,18 @@ class ToolRegistry:
     
     
     
+    async def call(self, name: str, args: dict[str, Any]) -> str:
+        if name not in self._tools:
+            raise KeyError(f"Tool '{name}' not found.")
+        return await self._tools[name].arun(**args)
+
+    def is_parallel_safe(self, name: str) -> bool:
+        if name not in self._tools:
+            raise KeyError(f"Tool '{name}' not found.")
+        return self._tools[name].parallel_safe
+        
+    
+    
 # used in agent langraph loop if llm demands a tool
 
 # tool_obj = registry.get_tool(name)[name]     # dict as you specified

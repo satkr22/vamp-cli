@@ -1,6 +1,7 @@
 import os
 import uuid
 import time
+import asyncio
 import platform
 import posixpath
 from pathlib import PurePosixPath
@@ -22,9 +23,9 @@ class DockerSandbox(Sandbox):
         self.config = config
         self.container_name = f"vamp-sandbox-{uuid.uuid4().hex[:8]}"
 
-    def start(self):
+    async def start(self):
         
-        ensure_sandbox_image_exists(self.config.image)
+        await ensure_sandbox_image_exists(self.config.image)
         
         command = [
             "docker",
@@ -67,18 +68,31 @@ class DockerSandbox(Sandbox):
             "infinity",
         ])
         
-        try:
-            subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        
+        _, stderr = await proc.communicate()
+        
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Docker container startup failed:\n{stderr.decode(errors='replace')}"
             )
-        except subprocess.CalledProcessError as e:
-            print(f"Docker container startup failed.\nError:\n{e.stderr}")
+        
+        # try:
+        #     subprocess.run(
+        #         command,
+        #         check=True,
+        #         capture_output=True,
+        #         text=True,
+        #     )
+        # except subprocess.CalledProcessError as e:
+        #     print(f"Docker container startup failed.\nError:\n{e.stderr}")
         
         
-    def execute(
+    async def execute(
         self,
         command: str,
         cwd: str = "/workspace",
@@ -88,52 +102,96 @@ class DockerSandbox(Sandbox):
 
         safe_cwd = _resolve_cwd(cwd) 
         
-        docker_command = [
-            "docker",
-            "exec",
-            "-w",
-            safe_cwd,
-            self.container_name,
-            "/bin/bash",
-            "-lc",
-            command,
-        ]
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "exec", "-w", safe_cwd,
+            self.container_name, "/bin/bash", "-lc", command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        
+        # docker_command = [
+        #     "docker",
+        #     "exec",
+        #     "-w",
+        #     safe_cwd,
+        #     self.container_name,
+        #     "/bin/bash",
+        #     "-lc",
+        #     command,
+        # ]
 
         try:
-            result = subprocess.run(
-                docker_command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout,
             )
+            
+            # result = subprocess.run(
+            #     docker_command,
+            #     capture_output=True,
+            #     text=True,
+            #     timeout=timeout,
+            # )
 
+            # return CommandResult(
+            #     command=command,
+            #     stdout=result.stdout,
+            #     stderr=result.stderr,
+            #     exit_code=result.returncode,
+            # )
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except:
+                pass
+            
+            try:
+                stdout_b, stderr_b = await proc.communicate()
+            except Exception:
+                stdout_b, stderr_b = b"", b""
+            
             return CommandResult(
                 command=command,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                exit_code=result.returncode,
-            )
-
-        except subprocess.TimeoutExpired as e:
-            return CommandResult(
-                command=command,
-                stdout=e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout or "",
-                stderr=e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr or "",
+                stdout=stdout_b.decode(errors="replace"),
+                stderr=stderr_b.decode(errors="replace"),
                 exit_code=-1,
                 timed_out=True,
             )
-            
-    def stop(self):
-        subprocess.run(
-            [
-                "docker",
-                "rm",
-                "-f",
-                self.container_name,
-            ],
-            capture_output=True,
-            text=True,
+        
+        return CommandResult(
+            command=command,
+            stdout=stdout_b.decode(errors="replace"),
+            stderr=stderr_b.decode(errors="replace"),
+            exit_code=proc.returncode or 0,
         )
+
+        # except subprocess.TimeoutExpired as e:
+        #     return CommandResult(
+        #         command=command,
+        #         stdout=e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout or "",
+        #         stderr=e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr or "",
+        #         exit_code=-1,
+        #         timed_out=True,
+        #     )
+            
+    async def stop(self):
+        
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "rm", "-f", self.container_name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        
+        # subprocess.run(
+        #     [
+        #         "docker",
+        #         "rm",
+        #         "-f",
+        #         self.container_name,
+        #     ],
+        #     capture_output=True,
+        #     text=True,
+        # )
         
 def _resolve_cwd(cwd: str) -> str:
 
@@ -158,11 +216,7 @@ def _resolve_cwd(cwd: str) -> str:
     return str(normalized)
 
 
-import os
-import subprocess
-import uuid
-
-def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
+async def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
     """
     Checks if the specified Docker image exists locally. 
     If it doesn't, it dynamically creates a Dockerfile with essential 
@@ -170,34 +224,70 @@ def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
     """
     docker_file = "src/vamp_cli/sandbox/Dockerfile"
     
-    try:
-        # 1. Check if the image already exists in the local Docker daemon
-        subprocess.run(
-            ["docker", "image", "inspect", image_tag],
-            check=True, 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL
-        )
-        # Image exists, return immediately without doing anything
+    if await _docker_image_exists(image_tag):
         return True
+    print(f"Image '{image_tag}' not found locally. Building sandbox environment...")
+    print("Downloading and configuring development runtimes (Python, Node, Git)...")
+    
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "build", "-t", image_tag, "-f", docker_file, ".",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    
+    assert proc.stdout is not None
+    
+    async for line in proc.stdout:
+        # Live build progress — the user sees what's happening.
+        print(line.decode(errors="replace"), end="", flush=True)
+    
+    await proc.wait()
+    
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Failed to auto-compile the coding sandbox image (exit {proc.returncode})."
+        )
+
+    print(f"Successfully compiled sandbox environment: {image_tag}")
+    
+    return True
+    
+    # try:
+    #     # 1. Check if the image already exists in the local Docker daemon
+    #     subprocess.run(
+    #         ["docker", "image", "inspect", image_tag],
+    #         check=True, 
+    #         stdout=subprocess.DEVNULL, 
+    #         stderr=subprocess.DEVNULL
+    #     )
+    #     # Image exists, return immediately without doing anything
+    #     return True
         
-    except subprocess.CalledProcessError:
-        # 2. Image does not exist -> Start the automated build process
-        print(f"Image '{image_tag}' not found locally. Initiating automatic environment build...")
+    # except subprocess.CalledProcessError:
+    #     # 2. Image does not exist -> Start the automated build process
+    #     print(f"Image '{image_tag}' not found locally. Initiating automatic environment build...")
         
-        try:  
-            print("Downloading and configuring development runtimes (Python, Node, Git)...")
+    #     try:  
+    #         print("Downloading and configuring development runtimes (Python, Node, Git)...")
             
-            # Execute the docker build command
-            # (Remove stdout=subprocess.DEVNULL if you want the user to see the progress bar)
-            subprocess.run(
-                ["docker", "build", "-t", image_tag, "-f", docker_file, "."],
-                check=True,
-                stdout=subprocess.DEVNULL
-            )
-            print(f"Successfully compiled sandbox environment: {image_tag}")
-            return True
+    #         # Execute the docker build command
+    #         # (Remove stdout=subprocess.DEVNULL if you want the user to see the progress bar)
+    #         subprocess.run(
+    #             ["docker", "build", "-t", image_tag, "-f", docker_file, "."],
+    #             check=True,
+    #             stdout=subprocess.DEVNULL
+    #         )
+    #         print(f"Successfully compiled sandbox environment: {image_tag}")
+    #         return True
             
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to auto-compile the coding sandbox image architecture: {e}")
+    #     except subprocess.CalledProcessError as e:
+    #         raise RuntimeError(f"Failed to auto-compile the coding sandbox image architecture: {e}")
         
+        
+async def _docker_image_exists(image_tag: str) -> bool:
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "image", "inspect", image_tag,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    return await proc.wait() == 0

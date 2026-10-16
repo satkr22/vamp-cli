@@ -40,7 +40,7 @@ class Terminal:
     def __init__(self, sandbox: Sandbox) -> None:
         self.sandbox = sandbox
 
-    def execute(
+    async def execute(
         self,
         command: str,
         cwd: str = ".",
@@ -93,7 +93,7 @@ class Terminal:
             }
 
         try:
-            result: CommandResult = self.sandbox.execute(
+            result: CommandResult = await self.sandbox.execute(
                 command=command,
                 cwd=cwd,
                 timeout=timeout,

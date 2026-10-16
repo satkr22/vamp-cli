@@ -8,9 +8,11 @@ from vamp_cli.tools.execute_cmd import ExecuteCommandTool
 
 class ListDirTool(Tools):
     name = "list_dir"
+    parallel_safe = True
     description = (
         "List the files and directories contained within a workspace directory." 
         "Use this tool when you need to inspect directory structure or discover what exists at a path." 
+        "NOTE: BY DEFAULT ITS MAX DEPTH IS 2(for safetly in very large directories). To recurse more use specific path and max depth."
         "It does not read file contents and does not search inside files."
         "The listing recursively traverses subdirectories unless max_depth is specified." 
         ".gitignore rules are respected, including .gitignore files found inside nested directories. Symbolic links are skipped."
@@ -44,13 +46,14 @@ class ListDirTool(Tools):
     @override
     def run(self, **inputs) -> str:
         path = inputs["path"]
-        max_depth = inputs.get("max_depth")
+        max_depth = inputs.get("max_depth", 2)
         result = self.file_tools.list_dir(path, max_depth)
         return json.dumps(result)
 
 
 class ReadFileTool(Tools):
     name = "read_file"
+    parallel_safe = True
     description = (
         "Read the text content of a specific file."
         "Use this tool when you already know the file path and need to inspect its contents. It supports reading either the beginning of the file or a specific inclusive line range."
@@ -102,6 +105,7 @@ class ReadFileTool(Tools):
 
 class ReadManyFilesTool(Tools):
     name = "read_many_files"
+    parallel_safe = True
     description = (
         "Read multiple files in a single call."
         "Use this tool when you need to inspect the contents of several files at once."
@@ -160,6 +164,7 @@ class ReadManyFilesTool(Tools):
 
 class WriteFileTool(Tools):
     name = "write_file"
+    parallel_safe = False
     description = (
         "Create a file or replace the complete contents of an existing file with the supplied content."
 
@@ -215,6 +220,7 @@ class WriteFileTool(Tools):
 
 class ApplySearchReplaceTool(Tools):
     name = "apply_search_replace"
+    parallel_safe = False
     description = (
         "Make a targeted edit to an existing file by replacing exactly one occurrence of an existing text block with a replacement text block."
 
@@ -273,6 +279,7 @@ class ApplySearchReplaceTool(Tools):
 
 class FileSearchTool(Tools):
     name = "file_search"
+    parallel_safe = True
     description = (
         "Find files by their filename or path name, without searching their contents."
 
@@ -333,6 +340,7 @@ class FileSearchTool(Tools):
 
 class RipgrepSearchTool(Tools):
     name = "ripgrep_search"
+    parallel_safe = True
     description = (
         "Search the contents of one or more files for a text string or regular expression and return the matching lines with their file paths and line numbers."
 
@@ -412,6 +420,7 @@ class RipgrepSearchTool(Tools):
 
 class ExecuteCommandToolDef(Tools):
     name = "execute_command"
+    parallel_safe = False
     description = (
         "Execute a shell command in the sandboxed terminal and return the command's execution result."
 
@@ -448,15 +457,22 @@ class ExecuteCommandToolDef(Tools):
         self.execute_command_tool = execute_command_tool
 
     @override
-    def run(self, **inputs) -> str:
+    async def arun(self, **inputs) -> str:
         command = inputs["command"]
         cwd = inputs.get("cwd", ".")
-        result = self.execute_command_tool.execute_command(command, cwd)
+        result = await self.execute_command_tool.execute_command(command, cwd)
         return json.dumps(result)
+    
+    @override
+    def run(self, **inputs) -> str:
+        raise RuntimeError(
+            "execute_command must be invoked via arun(); sync run() is not supported."
+        )
     
     
 class SubmitPlanTool(Tools):
     name = "submit_plan"
+    parallel_safe = True
     description = (
         "Submit the final plan or answer and declare whether execution is required. "
         "Call this exactly once when you are completely finished investigating and ready to hand off. "
@@ -505,6 +521,7 @@ class SubmitPlanTool(Tools):
     
 class WriteTodosTool(Tools):
     name = "write_update_todos"
+    parallel_safe = True
     description = (
         "Create or update the todo list that tracks the work you are performing for the current task."
 

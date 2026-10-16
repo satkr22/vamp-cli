@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from abc import ABC
 from typing import Any
+import asyncio
 
 
 
@@ -16,6 +17,7 @@ class Tools(ABC):
     name: str
     description: str
     input_schema: InputSchema
+    parallel_safe: bool = False
 
     def schema(self) -> dict[str, Any]:
         return {
@@ -37,3 +39,6 @@ class Tools(ABC):
 
     def run(self, **kwargs: Any) -> str:
         raise NotImplementedError
+    
+    async def arun(self, **kwargs: Any) -> str:
+        return await asyncio.to_thread(self.run, **kwargs)

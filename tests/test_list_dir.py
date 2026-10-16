@@ -1,5 +1,6 @@
 from vamp_cli.workspace.workspace import Workspace
 from vamp_cli.utils.ignore import IgnoreMatcher
+from vamp_cli.tools.diagnostic import DiagnosticTools
 from vamp_cli.tools.files import FileTools
 from pathlib import Path
 
@@ -14,8 +15,8 @@ def test_list_dir(tmp_path):
     
     ws = Workspace(root=str(tmp_path))
     ignore = IgnoreMatcher(repo_root=str(tmp_path))
-    tools = FileTools(workspace=ws, ignore=ignore)
-    
+    diag = DiagnosticTools(workspace=ws)
+    tools = FileTools(workspace=ws, ignore=ignore, diagnostic=diag)
     entries = tools.list_dir(path=str(tmp_path))
     # entries = tools.list_dir(path=str(tmp_path), max_depth=3)
 
@@ -23,4 +24,4 @@ def test_list_dir(tmp_path):
         print(entry)
         
     # assert entries is not None
-    assert len(entries) == 4
+    assert len(entries.get("list")) == 4 #type: ignore
