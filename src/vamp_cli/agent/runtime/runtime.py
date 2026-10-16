@@ -58,10 +58,10 @@ class AgentRuntime:
         
         profile_cfg = self._resolve_profile(role)
         
-        # Tool objects, keyed by name — for execution.
+        # Tool objects, keyed by name - for execution.
         tools_by_name = self._tool_registry.get_tools(profile_cfg.tools)
 
-        # OpenAI-format schemas — for binding into the router.
+        # OpenAI-format schemas - for binding into the router.
         tool_schemas = self._tool_registry.get_openai_tools(profile_cfg.tools)
         
    
