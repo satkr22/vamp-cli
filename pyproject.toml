@@ -25,6 +25,12 @@ dependencies = [
     "rich",
     "typer",
     "pytest",
+    "pyyaml",
+    "pathspec",
+    "prompt-toolkit",
+    "langchain-core",
+    "langgraph",
+    "langchain-litellm",
 ]
 
 
