@@ -437,6 +437,9 @@ async def main():
             print(f"[runtime error] {e}")
             return
 
+def start():
+    asyncio.run(main())
+    
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    start()

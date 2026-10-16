@@ -31,6 +31,8 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.scripts]
+vamp = "vamp_cli.main:start"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
