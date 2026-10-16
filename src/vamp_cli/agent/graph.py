@@ -60,7 +60,12 @@ def route_after_plan_approver(state) -> Literal["coder", "__end__"]:
     return "coder" if state.get("requires_execution") else "__end__"
 
 
-def create_graph(coder_model, planner_model, tool_registry: ToolRegistry):
+def create_graph(
+    coder_model, 
+    planner_model, 
+    tool_registry: ToolRegistry,
+    checkpointer=None,
+):
 
     coder_node    = create_agent_node(coder_model)
     planner_node  = create_planner_node(planner_model)
@@ -151,4 +156,4 @@ def create_graph(coder_model, planner_model, tool_registry: ToolRegistry):
         }
     )
 
-    return g.compile(checkpointer=MemorySaver())
+    return g.compile(checkpointer=checkpointer or MemorySaver())
