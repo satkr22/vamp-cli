@@ -28,7 +28,7 @@ The first run automatically builds the `vamp-sandbox:latest` image from [`src/va
 
 ## Installation
 
-Create and activate a virtual environment, then install the project (all dependencies will be install itself):
+Create and activate a virtual environment, then install the project (all dependencies will be installed itself):
 
 ```bash
 python3 -m venv .venv
