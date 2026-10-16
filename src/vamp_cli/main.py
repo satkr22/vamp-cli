@@ -36,6 +36,7 @@ from vamp_cli.agent.context_sync import mode_switch_sync
 
 from vamp_cli.persistence.emitter import EventEmitter
 from vamp_cli.persistence.event_log import EventLog, uuid7
+from vamp_cli.persistence.loader import load_session, list_sessions, ResumedSession
 
 from vamp_cli.logging_setup.logging_setup import setup
 
@@ -203,20 +204,23 @@ async def streaming(
     return call_usage
 
 
-async def main():
+async def main(resume_id: str | None = None):
 
+    # logger
     # setup(level=logging.DEBUG, log_dir=f"{PROJECT_DIR}/logs")
 
+    # basic
     token_tracker = Token_Tracker()
-
     agent_runtime, tool_registry, sandbox = await create_runtime()
-
     coder_profile = agent_runtime.resolve(AgentRole.CODER)
     planner_profile = agent_runtime.resolve(AgentRole.PLANNER)
-
     VERSION = __VERSION__
-    SESSION_ID  = str(uuid7())
     
+    # session
+    is_resume = resume_id is not None
+    SESSION_ID  = resume_id if is_resume else str(uuid7())
+    
+    sessions_dir   = Path.home() / ".vamp" / "sessions"
     checkpoint_dir = Path.home() / ".vamp" / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_db  = checkpoint_dir / f"{SESSION_ID}.sqlite"
@@ -239,41 +243,140 @@ async def main():
         
         THREAD_ID = SESSION_ID
     
-        await log.append("session_start", {
-            "workspace_root": PROJECT_DIR,
-            "models": {
-                "coder":   getattr(coder_profile.model,   "model_name", None)
-                            or getattr(coder_profile.model,   "model", None),
-                "planner": getattr(planner_profile.model, "model_name", None)
-                            or getattr(planner_profile.model, "model", None),
-            },
-            "roles": {"coder": AgentRole.CODER.value, "planner": AgentRole.PLANNER.value},
-            "tools": tool_registry.list_tool_names(),
-            "checkpoint_thread_id": THREAD_ID,   # step 4 will make this per-session
-            "checkpoint_backend":   "sqlite",
-        })
-        
         session_config: RunnableConfig = {
             "configurable": {"thread_id": THREAD_ID},
             "recursion_limit": 200,
         }
         
-        snapshot = await graph.aget_state(session_config)
-        print("iteration: ", snapshot.values.get("iteration"))
-
-        session = PromptSession()
-
-        print("\nVAMP-CLI Agent Workspace Initialized.")
-        print("\nType /mode to select normal or plan mode.")
-        print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
-
+        # fresh session
+        if not is_resume:
+            await log.append("session_start", {
+                "workspace_root": PROJECT_DIR,
+                "models": {
+                    "coder":   getattr(coder_profile.model,   "model_name", None)
+                                or getattr(coder_profile.model,   "model", None),
+                    "planner": getattr(planner_profile.model, "model_name", None)
+                                or getattr(planner_profile.model, "model", None),
+                },
+                "roles": {"coder": AgentRole.CODER.value, "planner": AgentRole.PLANNER.value},
+                "tools": tool_registry.list_tool_names(),
+                "checkpoint_thread_id": THREAD_ID,   # step 4 will make this per-session
+                "checkpoint_backend":   "sqlite",
+            })
+            
+        # default loop state 
         is_session_started = False
         pending_command = None
         last_state = None
-
         selected_mode: str = "normal"  # user's current choice (changedd by '/mode')
         executed_mode: str = "normal"  # mode the last graph run used
+        
+        # resume path
+        resumed: ResumedSession | None = None
+        if is_resume:
+            try:
+                resumed = await load_session(
+                    sessions_dir=sessions_dir,
+                    session_id=SESSION_ID,
+                    graph=graph,
+                    session_config=session_config,
+                    reconstruct_if_missing=True,
+                )
+            except FileNotFoundError as e:
+                await sandbox.destroy()
+                print(f"[resume error] {e}")
+                return
 
+            selected_mode      = resumed.selected_mode
+            executed_mode      = resumed.executed_mode
+            is_session_started = resumed.is_session_started
+            last_state         = resumed.last_state
+
+
+        # banner
+        session = PromptSession()
+        print("\nVAMP-CLI Agent Workspace Initialized.")
+        print(f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else ""))
+        
+        if resumed:
+            print(f"events loaded: {len(resumed.events)}")
+            print(f"checkpointer: {resumed.checkpoint_source}")
+            print(f"selected mode: {resumed.selected_mode}")
+            print(f"executed mode: {resumed.executed_mode}")
+            for w in resumed.warnings:
+                print(f"  [warn] {w}")
+                
+        print("\nType /mode to select normal or plan mode.")
+        print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
+
+
+        # resume-parked-interrupt: run once before the loop 
+        if resumed and resumed.pending_interrupt:
+            pi = resumed.pending_interrupt
+            checkpoint_data = pi.get("payload") or {}
+            interrupt_kind  = pi.get("kind") or "unknown"
+
+            print("=" * 60)
+            print("RESUMED SESSION IS PARKED AT AN OUTSTANDING INTERRUPT")
+            print("=" * 60 + "\n")
+
+            if checkpoint_data.get("implementation_permission"):
+                print("PLAN APPROVAL REQUESTED")
+                print(f"\nPlan:\n\n{checkpoint_data.get('plan', '')}")
+            elif checkpoint_data.get("requires_tool_approval"):
+                print("SECURITY VERIFICATION INTERCEPTED")
+                calls = checkpoint_data.get("dangerous_calls", [])
+                print(f"\n{len(calls)} dangerous call(s) flagged; "
+                      f"{checkpoint_data.get('safe_call_count', 0)} safe call(s) "
+                      f"will also run on approval.\n")
+                for c in calls:
+                    print(f"  Tool: {c['tool_name']}")
+                    print(f"  Args: {json.dumps(c['tool_args'], indent=2)}\n")
+                print(f"System Message: {checkpoint_data.get('warning', '')}")
+            else:
+                print(f"Unrecognised interrupt payload:\n{checkpoint_data}")
+
+            print()
+            choice = (
+                (await session.prompt_async(
+                    "Do you authorize the above ask? (yes/no/abort): "
+                ))
+                .strip().lower()
+            )
+
+            if choice in ("abort", "a", "quit", "exit"):
+                # Leave the interrupt unresolved but close cleanly.
+                await log.append("interrupt_response", {
+                    "kind": interrupt_kind,
+                    "approved": False,
+                    "reason": "user aborted resume",
+                })
+                await log.close(reason="user_abort_resume")
+                await sandbox.destroy()
+                return
+
+            if choice in ("y", "yes"):
+                await log.append("interrupt_response", {
+                    "kind": interrupt_kind,
+                    "approved": True,
+                    "reason": None,
+                })
+                pending_command = Command(
+                    resume=FeedbackResponse(approved=True)
+                )
+            else:
+                reason = (await session.prompt_async("Reason: ")).strip()
+                await log.append("interrupt_response", {
+                    "kind": interrupt_kind,
+                    "approved": False,
+                    "reason": reason,
+                })
+                pending_command = Command(
+                    resume=FeedbackResponse(approved=False, reason=reason)
+                )
+                
+                 
+        # main loop
         while True:
             try:
                 with patch_stdout():
@@ -391,7 +494,6 @@ async def main():
                     # interrupt handling
                     # 3. Handle runtime verification interrupts
                     state_snapshot = await graph.aget_state(session_config)
-                    print(state_snapshot.values.get("iteration"))
                     result = state_snapshot.values
                     # cache full state for next switch
                     last_state = result
@@ -413,20 +515,20 @@ async def main():
                         # plan approval
                         if checkpoint_data.get("implementation_permission"):  # type: ignore
                             interrupt_kind = "plan_approval"
-                            prompt_text    = "Do you authorize the above plan? (yes/no): "
+                            prompt_text = "Do you authorize the above plan? (yes/no): "
 
                         # tool approval
                         elif checkpoint_data.get("requires_tool_approval"):  # type: ignore
                             interrupt_kind = "tool_approval"
-                            prompt_text    = "Do you authorize the above ask? (yes/no): "
+                            prompt_text = "Do you authorize the above ask? (yes/no): "
 
                         else:
                             # unknown payload - surface raw for debugging
                             interrupt_kind = "unknown"
-                            prompt_text    = "Do you authorize the above ask? (yes/no): "
+                            prompt_text = "Do you authorize the above ask? (yes/no): "
                             
                         await log.append("interrupt_request", {
-                            "kind":    interrupt_kind,
+                            "kind": interrupt_kind,
                             "payload": checkpoint_data,
                         })
                         
@@ -468,9 +570,9 @@ async def main():
                         if choice in ("y", "yes"):
                             print("Authorized. Continuing execution...")
                             await log.append("interrupt_response", {
-                                "kind":     interrupt_kind,
+                                "kind": interrupt_kind,
                                 "approved": True,
-                                "reason":   None,
+                                "reason": None,
                             })
                             pending_command = Command(
                                 resume=FeedbackResponse(approved=True)
@@ -479,9 +581,9 @@ async def main():
                         else:
                             reason = (await session.prompt_async("Reason: ")).strip()
                             await log.append("interrupt_response", {
-                                "kind":     interrupt_kind,
+                                "kind": interrupt_kind,
                                 "approved": False,
-                                "reason":   reason,
+                                "reason": reason,
                             })
                             print("Blocked. Returning denial to agent history...")
                             pending_command = Command(
@@ -503,7 +605,33 @@ async def main():
                 return
 
 def start():
-    asyncio.run(main())
+    
+    args = sys.argv[1:]
+    resume_id = None
+    list_flag = False
+
+    if "--list" in args or "-l" in args:
+        list_flag = True
+    if "--resume" in args or "-r" in args:
+        i = args.index("--resume" if "--resume" in args else "-r")
+        if i + 1 < len(args):
+            resume_id = args[i + 1]
+
+    if list_flag:
+        sessions_dir = Path.home() / ".vamp" / "sessions"
+        rows = list_sessions(sessions_dir)
+        if not rows:
+            print("No sessions found in this workspace.")
+            return
+        print(f"\n{len(rows)} session(s) in {sessions_dir}:\n")
+        for r in rows:
+            started = (r["started_at"] or "")[:19]
+            msg = (r["first_message"] or "")[:70].replace("\n", " ")
+            print(f"  {r['session_id']}  {started}  {msg}")
+        print()
+        return
+    
+    asyncio.run(main(resume_id=resume_id))
     
 
 if __name__ == "__main__":
