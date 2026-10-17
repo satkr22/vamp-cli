@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from langchain_core.runnables import Runnable
-from langchain_litellm import ChatLiteLLM
+# from langchain_litellm import ChatLiteLLM
 
 from vamp_cli.config.loader import get_api_key
 from vamp_cli.config.schema import AppConfig, ModelCapabilities, ModelConfig
@@ -71,7 +71,8 @@ class ModelRouter:
         `tools` may be empty. When fallbacks exist, each fallback is bound to the
         same tool set BEFORE the fallback wrapper is created.
         """
-
+        
+        
         self._model_cfg(model_name)  # fail fast on unknown model name
         tool_list = tuple(tools or ())
         tool_key = tuple(self._tool_key(tool) for tool in tool_list)
@@ -187,6 +188,9 @@ class ModelRouter:
             ) from None
 
     def _build(self, model_name: str) -> ChatLiteLLM:
+        
+        from langchain_litellm import ChatLiteLLM
+        
         cfg = self._model_cfg(model_name)
 
         direct = {k: v for k, v in cfg.params.items() if k in _DIRECT_PARAMS}

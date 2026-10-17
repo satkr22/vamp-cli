@@ -22,6 +22,7 @@ class AgentProfile:
     tools: dict[str, Tools]          # {name: Tools} - for execution dispatch
     tool_schemas: list[dict]         # OpenAI-format - for giving tool list to llm model
     system_prompt: str
+    context_window: int
     
 
 class AgentRuntime:
@@ -73,12 +74,15 @@ class AgentRuntime:
             usage_context=role.value,
         )
         
+        context_window_size = self._config.models[profile_cfg.model].capabilities.context_window
+        
         profile =  AgentProfile(
             role=role.value,
             model=model,
             tools=tools_by_name,
             tool_schemas=tool_schemas,
             system_prompt=system_prompt,
+            context_window=context_window_size
         )
         
         return profile

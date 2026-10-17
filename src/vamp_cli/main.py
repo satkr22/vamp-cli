@@ -1,10 +1,9 @@
-import os
 import sys
-import logging
 import asyncio
 from pathlib import Path
 from typing import Any
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from vamp_cli.workspace.workspace import Workspace
@@ -15,12 +14,8 @@ from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.utils.token_tracker import Token_Tracker
 
 from vamp_cli.sandbox.terminal import Terminal
-from vamp_cli.sandbox.docker import DockerSandbox, SandboxConfig
+from vamp_cli.sandbox.docker import SandboxConfig
 from vamp_cli.sandbox.manager import SandboxManager
-
-from vamp_cli.llm.router import ModelRouter
-from vamp_cli.llm.adapter_registry import AdapterRegistry
-from vamp_cli.llm.usage import UsageTracker, _UsageCallback
 
 from vamp_cli.tools.files import FileTools
 from vamp_cli.tools.diagnostic import DiagnosticTools
@@ -36,14 +31,29 @@ from vamp_cli.agent.context_sync import mode_switch_sync
 
 from vamp_cli.persistence.emitter import EventEmitter
 from vamp_cli.persistence.event_log import EventLog, uuid7
-from vamp_cli.persistence.loader import load_session, list_sessions, ResumedSession
+from vamp_cli.persistence.fork import fork_at_event
+from vamp_cli.persistence.transcript import print_transcript
+from vamp_cli.persistence.compaction import compact_session, DEFAULT_KEEP_TURNS, plan_compaction_range, auto_compact_if_needed, DEFAULT_COMPACT_THRESHOLD
+from vamp_cli.persistence.loader import (
+    load_session, 
+    list_sessions, 
+    ResumedSession, 
+    load_chain, 
+    list_user_messages, 
+    list_leaves, 
+    current_thread_id, 
+    reconstruct_agent_state, 
+    derive_display_state,
+    load_all_events,
+    _repair_orphaned_tool_calls
+)
 
 from vamp_cli.logging_setup.logging_setup import setup
 
 from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 
 __VERSION__ = "0.1.0"
@@ -110,6 +120,9 @@ async def build_startup():
 
 async def create_runtime():
 
+    from vamp_cli.llm.router import ModelRouter
+    from vamp_cli.llm.adapter_registry import AdapterRegistry
+    
     config = load_config()
 
     adapter = AdapterRegistry()
@@ -117,6 +130,7 @@ async def create_runtime():
     tool_registry, sandbox = await build_startup()
 
     prompt_store = PromptStore(hot_reload=True)
+    
 
     model_router = ModelRouter(config=config, adapters=adapter)
 
@@ -158,7 +172,10 @@ async def streaming(
             if kind == "on_chat_model_start":
                 # First time we know a model will run, print the header.
                 if not header_printed:
-                    print("\nAgent: \n", end="", flush=True)
+                    print_formatted_text(
+                        HTML("<b><ansigreen>\n\nAgent:</ansigreen></b> "),
+                        end=""
+                    )
                     header_printed = True
 
             # capture chat model stream for final output and reasoning
@@ -193,7 +210,7 @@ async def streaming(
                     call_usage["output_tokens"] += um.get("output_tokens", 0)
                     call_usage["total_tokens"] += um.get("total_tokens", 0)
 
-    except KeyboardInterrupt as e:
+    except (asyncio.CancelledError, KeyboardInterrupt) as e:
         print("\n[aborted by user]")
         return call_usage
     except Exception as e:
@@ -203,6 +220,15 @@ async def streaming(
     print("\n")
     return call_usage
 
+
+# ANSI helpers
+_DIM   = "\033[2m"
+_BOLD  = "\033[1m"
+_CYAN  = "\033[36m"
+_GREEN = "\033[32m"
+_YELLOW = "\033[33m"
+_RED   = "\033[31m"
+_RESET = "\033[0m"
 
 async def main(resume_id: str | None = None):
 
@@ -244,7 +270,10 @@ async def main(resume_id: str | None = None):
         THREAD_ID = SESSION_ID
     
         session_config: RunnableConfig = {
-            "configurable": {"thread_id": THREAD_ID},
+            "configurable": {
+                "thread_id": THREAD_ID,
+                "emitter":   emitter,
+            },
             "recursion_limit": 200,
         }
         
@@ -262,6 +291,10 @@ async def main(resume_id: str | None = None):
                 "tools": tool_registry.list_tool_names(),
                 "checkpoint_thread_id": THREAD_ID,   # step 4 will make this per-session
                 "checkpoint_backend":   "sqlite",
+                "system_prompts": {
+                    "coder":   coder_profile.system_prompt,
+                    "planner": planner_profile.system_prompt,
+                },
             })
             
         # default loop state 
@@ -287,16 +320,33 @@ async def main(resume_id: str | None = None):
                 print(f"[resume error] {e}")
                 return
 
-            selected_mode      = resumed.selected_mode
-            executed_mode      = resumed.executed_mode
+            selected_mode = resumed.selected_mode
+            executed_mode = resumed.executed_mode
             is_session_started = resumed.is_session_started
-            last_state         = resumed.last_state
+            last_state = resumed.last_state
+            
+            if resumed.thread_id and resumed.thread_id != THREAD_ID:
+                THREAD_ID = resumed.thread_id
+                session_config["configurable"]["thread_id"] = THREAD_ID
+                print(f"[resume] using forked thread: {THREAD_ID}")
+                
+            # header = (
+            #     f"-- Resumed session: {SESSION_ID} "
+            #     f"({len(resumed.events)} events, "
+            #     f"mode={resumed.selected_mode}, "
+            #     f"checkpointer={resumed.checkpoint_source}) --"
+            # )
+            # print_transcript(resumed.events, header=header)
+            # print("\n── End of history --\n")
 
 
         # banner
         session = PromptSession()
         print("\nVAMP-CLI Agent Workspace Initialized.")
         print(f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else ""))
+        
+        print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
+        print("\nType /mode to select normal or plan mode.")
         
         if resumed:
             print(f"events loaded: {len(resumed.events)}")
@@ -305,10 +355,11 @@ async def main(resume_id: str | None = None):
             print(f"executed mode: {resumed.executed_mode}")
             for w in resumed.warnings:
                 print(f"  [warn] {w}")
+            
+            print_transcript(resumed.events)
+            print("\n── End of history --\n")
                 
-        print("\nType /mode to select normal or plan mode.")
-        print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
-
+        
 
         # resume-parked-interrupt: run once before the loop 
         if resumed and resumed.pending_interrupt:
@@ -383,15 +434,245 @@ async def main(resume_id: str | None = None):
                     # 0. user selects the mode:
                     if pending_command is None:
                         # 1. get the query from the user
-                        user_input = (await session.prompt_async("You: ")).strip()
+                        user_input = (await session.prompt_async(
+                            HTML("<b><ansicyan>\nYou:</ansicyan></b> ")
+                        )).strip()
                         if not user_input:
                             continue
+                        
+                        # /branches
+                        if user_input == "/branches":
+                            chain = load_all_events(sessions_dir, SESSION_ID)
+                            leaves = list_leaves(chain)
+                            if not leaves:
+                                print("No branches.")
+                                continue
+
+                            print(f"\n{len(leaves)} branch tip(s) in this session:\n")
+                            for i, leaf in enumerate(leaves, 1):
+                                leaf_chain = load_chain(sessions_dir, SESSION_ID, leaf_uuid=leaf)
+                                last_user = next(
+                                    (e for e in reversed(leaf_chain)
+                                    if e.get("type") == "user_message"),
+                                    None,
+                                )
+                                preview = ""
+                                if last_user:
+                                    preview = ((last_user.get("data") or {}).get("content") or "")[:60]
+                                    preview = preview.replace("\n", " ")
+                                marker = " <- current" if leaf == log.head_uuid else ""
+                                print(f"  [{i}] {leaf[:8]}  {preview}{marker}")
+
+                            pick = (await session.prompt_async("Switch to branch [1-N] or 'cancel': ")).strip()
+                            if pick.lower() in ("", "cancel", "c"):
+                                continue
+                            try:
+                                idx = int(pick)
+                                if idx < 1 or idx > len(leaves):
+                                    print("Out of range.")
+                                    continue
+                            except ValueError:
+                                print("Not a number.")
+                                continue
+
+                            target_leaf = leaves[idx - 1]
+
+                            # Move the head; do NOT write a fork event - this is a checkout, not a fork.
+                            await log.set_head(target_leaf)
+
+                            # Rebuild state for the new branch.
+                            chain = load_chain(sessions_dir, SESSION_ID, leaf_uuid=target_leaf)
+                            new_state = reconstruct_agent_state(chain)
+                            new_thread = current_thread_id(chain, default=SESSION_ID)
+
+                            # Move to that branch's checkpointer thread.
+                            THREAD_ID = new_thread
+                            session_config["configurable"]["thread_id"] = THREAD_ID
+
+                            # Refresh CLI-side state.
+                            disp = derive_display_state(chain)
+                            selected_mode = disp["selected_mode"]
+                            executed_mode = disp["executed_mode"]
+                            is_session_started = disp["is_session_started"]
+                            last_state = new_state
+
+                            print(f"Switched to branch {target_leaf}. "
+                                f"thread={THREAD_ID}  mode={selected_mode}  "
+                                f"messages={len(new_state['coder_messages'])}c/"
+                                f"{len(new_state['planner_messages'])}p")
+                            print_transcript(chain, header=f"-- Branch {target_leaf} --")
+                            print("\n── End of history --\n")
+                            continue
+
+                        # /fork
+                        if user_input == "/fork" or user_input.startswith("/fork "):
+                            chain = load_chain(sessions_dir, SESSION_ID)
+                            ums   = list_user_messages(chain)
+
+                            if not ums:
+                                print("No user messages to fork to.")
+                                continue
+
+                            shadowed_count = sum(1 for m in ums if m["shadowed"])
+                            header = "\nUser messages on this branch"
+                            if shadowed_count:
+                                header += f" ({shadowed_count} compacted)"
+                            print(header + ":\n")
+
+                            for m in ums:
+                                ts = (m["timestamp"] or "")[11:19]
+                                preview = m["content"].replace("\n", " ")[:70]
+                                tag = "  [compacted]" if m["shadowed"] else ""
+                                print(f"  [{m['index']}] {ts}  {preview}{tag}")
+
+                            # footer explaining fork semantics for compacted branches
+                            any_compaction = any(e.get("type") == "compaction" for e in chain)
+                            if any_compaction:
+                                print()
+                                print("Note: rewinding creates a new branch from that point. Because the")
+                                print("compaction event currently sits at the tip of this branch, any")
+                                print("fork goes to a point BEFORE it - the new branch will show the")
+                                print("original (uncompacted) messages from that point on.")
+
+                            if user_input.startswith("/fork "):
+                                pick = user_input[len("/fork "):].strip()
+                            else:
+                                pick = (await session.prompt_async(
+                                    "Rewind to BEFORE message [1-N] or 'cancel': "
+                                )).strip()
+
+                            if pick.lower() in ("", "cancel", "c"):
+                                continue
+                            try:
+                                idx = int(pick)
+                            except ValueError:
+                                print("Not a number.")
+                                continue
+                            if idx < 1 or idx > len(ums):
+                                print("Out of range.")
+                                continue
+
+                            target = ums[idx - 1]
+
+                            if target["shadowed"]:
+                                print(f"\nMessage [{idx}] has been compacted away.")
+                                print("Rewinding to it will produce a new branch where that compaction")
+                                print("does not apply - the original messages from that point will be")
+                                print("restored on the new branch.")
+                                confirm = (await session.prompt_async("Proceed? [y/N]: ")).strip().lower()
+                                if confirm not in ("y", "yes"):
+                                    print("Cancelled.")
+                                    continue
+
+                            fork_point = target["parent_uuid"]
+                            if not fork_point:
+                                print("Cannot fork before the first event.")
+                                continue
+
+                            print(f"\nRewinding before message [{idx}]: \"{target['content'][:60]}\"")
+                            print("(The old branch is preserved; nothing is deleted.)\n")
+
+                            try:
+                                result = await fork_at_event(
+                                    log,
+                                    session_id=SESSION_ID,
+                                    fork_point_uuid=fork_point,
+                                    graph=graph,
+                                    reason=f"user_rewind_before_user_message_{idx}",
+                                )
+                            except Exception as e:
+                                print(f"[fork failed] {e!r}")
+                                continue
+
+                            THREAD_ID = result["thread_id"]
+                            session_config["configurable"]["thread_id"] = THREAD_ID
+                            last_state = result["state"]
+
+                            chain = load_chain(sessions_dir, SESSION_ID, leaf_uuid=result["fork_uuid"])
+                            disp = derive_display_state(chain)
+                            selected_mode      = disp["selected_mode"]
+                            executed_mode      = disp["executed_mode"]
+                            is_session_started = disp["is_session_started"]
+
+                            print(f"Forked. new_thread={THREAD_ID}")
+                            print(f"        state: {len(last_state['coder_messages'])} coder / "
+                                f"{len(last_state['planner_messages'])} planner messages, "
+                                f"iteration={last_state.get('iteration', 0)}")
+                            print("Next message you type starts the new branch.\n")
+
+                            print_transcript(chain, header=f"-- Forked branch {result['fork_uuid'][:8]} --")
+                            print("\n── End of history --\n")
+                            continue
+                        
+                        # /compact
+                        if user_input == "/compact" or user_input.startswith("/compact "):
+                            # parse optional keep_turns
+                            keep = DEFAULT_KEEP_TURNS
+                            if user_input.startswith("/compact "):
+                                try:
+                                    keep = int(user_input[len("/compact "):].strip())
+                                    if keep < 0:
+                                        raise ValueError
+                                except ValueError:
+                                    print("Usage: /compact [keep_turns]  (default 4)")
+                                    continue
+
+                            chain = load_chain(sessions_dir, SESSION_ID)
+                            plan = plan_compaction_range(chain, keep_turns=keep)
+                            if plan is None:
+                                print(f"Nothing to compact - you have ≤ {keep} user turns on this branch.")
+                                continue
+
+                            if pending_command is not None:
+                                print("Cannot compact while resuming an interrupt. Resolve it first.")
+                                continue
+
+                            print(f"\nWill compact {plan['event_count']} events "
+                                f"covering the earliest user turns up to (but not including) "
+                                f"the last {keep} — roughly ~{plan['est_tokens']} tokens.")
+                            print(f"Keeping the last {keep} user turns intact.")
+                            confirm = (await session.prompt_async("Proceed? [Y/n]: ")).strip().lower()
+                            if confirm not in ("", "y", "yes"):
+                                print("Cancelled.")
+                                continue
+
+                            print("Summarizing…")
+                            try:
+                                result = await compact_session(
+                                    log,
+                                    chain=chain,
+                                    graph=graph,
+                                    session_config=session_config,
+                                    model=coder_profile.model if selected_mode == "normal" else planner_profile.model,
+                                    keep_turns=keep,
+                                    channel="both",
+                                )
+                            except ValueError as e:
+                                print(f"[compact] {e}")
+                                continue
+                            except Exception as e:
+                                print(f"[compact failed] {e!r}")
+                                continue
+
+                            last_state = result["new_state"]
+                            print(f"\nCompacted {result['event_count']} events: "
+                                f"~{result['tokens_before']} → ~{result['tokens_after']} tokens.")
+                            print("Summary preview:\n")
+                            preview = result["summary"].strip()
+                            print("  " + preview[:600].replace("\n", "\n  "))
+                            if len(preview) > 600:
+                                print("  …")
+                            print()
+                            continue
+                        
+                        # /exit or /quit
                         if user_input.lower() in ["/exit", "/quit"]:
                             print("Stopping active workspace containers...")
                             await log.close(reason="user_exit")
                             await sandbox.destroy()
                             return
 
+                        # /mode
                         if user_input == "/mode":
                             picked = (
                                 (await session.prompt_async("Select Mode [plan/normal]: "))
@@ -412,6 +693,7 @@ async def main(resume_id: str | None = None):
                                     "from": prev,
                                     "to":   selected_mode,
                                 })
+                                emitter.last_input_tokens = 0
                                 print(f"{selected_mode} mode selected. Continue...")
                             else:
                                 print(f"Already in {selected_mode} mode.")
@@ -425,17 +707,48 @@ async def main(resume_id: str | None = None):
                             "content": user_input,
                             "mode":    new_mode,
                         })
+                        
+                        # auto-compaction gate
+                        # Fires only when the previous turn's final prompt was
+                        # at/above the threshold. Runs synchronously so the
+                        # checkpointer and last_state are consistent before the
+                        # graph is invoked.
+                        chain = load_chain(sessions_dir, SESSION_ID)
+                        auto = await auto_compact_if_needed(
+                            log,
+                            chain=chain,
+                            graph=graph,
+                            session_config=session_config,
+                            model=coder_profile.model if new_mode == "normal" else planner_profile.model,
+                            last_input_tokens=emitter.last_input_tokens,
+                            context_window=coder_profile.context_window if new_mode == "normal" else planner_profile.context_window,
+                            threshold=DEFAULT_COMPACT_THRESHOLD,
+                            keep_turns=DEFAULT_KEEP_TURNS,
+                        )
+                        if auto is not None:
+                            last_state = auto["new_state"]
+                            # Reset the tracked input size after compaction so
+                            # we don't retrigger on the next turn before the
+                            # model has actually seen the new prompt size.
+                            emitter.last_input_tokens = 0
+
 
                         # 2. Build or pass updates to the thread state
                         if not is_session_started:
                             # first message so initialize all seed states
                             payload = {
                                 "planner_messages": [
-                                    SystemMessage(content=planner_profile.system_prompt),
+                                    SystemMessage(
+                                        content=planner_profile.system_prompt,
+                                        id="planner_system_prompt"
+                                    ),
                                     HumanMessage(content=user_input),
                                 ],
                                 "coder_messages": [
-                                    SystemMessage(content=coder_profile.system_prompt),
+                                    SystemMessage(
+                                        content=coder_profile.system_prompt,
+                                        id="coder_system_prompt"
+                                    ),
                                     HumanMessage(content=user_input),
                                 ],
                                 "task": user_input,
@@ -621,7 +934,7 @@ def start():
         sessions_dir = Path.home() / ".vamp" / "sessions"
         rows = list_sessions(sessions_dir)
         if not rows:
-            print("No sessions found in this workspace.")
+            print("No sessions found.")
             return
         print(f"\n{len(rows)} session(s) in {sessions_dir}:\n")
         for r in rows:
