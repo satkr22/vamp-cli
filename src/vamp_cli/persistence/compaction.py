@@ -242,11 +242,11 @@ async def compact_session(
     await apply_compaction_to_checkpointer(graph, session_config, new_state)
 
     return {
-        "event_count":   plan["event_count"],
+        "event_count": plan["event_count"],
         "tokens_before": plan["est_tokens"],
-        "tokens_after":  est_after,
-        "summary":       summary,
-        "new_state":     new_state,
+        "tokens_after": est_after,
+        "summary": summary,
+        "new_state": new_state,
     }
 
 
@@ -304,7 +304,7 @@ def get_model_context_window(model) -> int:
         if prefix in name:
             return size
 
-    return 128_000  # conservative default
+    return 128_000  # default
 
 
 def should_compact(
@@ -344,7 +344,7 @@ async def auto_compact_if_needed(
     print(
         f"\n[auto-compact] context at "
         f"{last_input_tokens:,}/{context_window:,} tokens "
-        f"({last_input_tokens / context_window:.1%}) — summarizing…"
+        f"({last_input_tokens / context_window:.1%}) - summarizing..."
     )
 
     try:
@@ -358,8 +358,7 @@ async def auto_compact_if_needed(
             channel=channel,
         )
     except ValueError as e:
-        # Nothing to compact (e.g. only 2 turns exist) — that's fine,
-        # the user will hit the limit on a later turn.
+        # Nothing to compact
         print(f"[auto-compact] skipped: {e}")
         return None
     except Exception as e:

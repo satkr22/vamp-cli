@@ -2,6 +2,8 @@ import json
 import time
 import asyncio
 from typing import Any
+from prompt_toolkit import print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText, HTML
 
 from langgraph.graph import END
 from langgraph.types import interrupt, Command
@@ -32,10 +34,23 @@ def create_planner_node(model: Runnable):
         )
         
         if response.tool_calls:
-            print(f"\n[planner] calling:")
+            print_formatted_text(
+                FormattedText([(
+                    "dim",
+                    "\n\n[planner] calling:"
+                )]),
+                end="\n"
+            )
             for tc in response.tool_calls:
-                print("Tool: ", tc['name'])
-                print("Arguments: ", tc['args'])
+                print_formatted_text(
+                    FormattedText([(
+                        "dim", 
+                        f">> {tc['name']}({tc['args']})"
+                    )]),
+                    end="\n"
+                )
+                # print("Tool: ", tc['name'])
+                # print("Arguments: ", tc['args'])
         
         return {
             "planner_messages": [response],
@@ -99,10 +114,21 @@ def create_agent_node(model: Runnable):
         # print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
         
         if response.tool_calls:
-            print(f"\n[coder] calling:")
+            print_formatted_text(
+                FormattedText([(
+                    "dim",
+                    "\n\n[coder] calling:"
+                )]),
+                end="\n"
+            )
             for tc in response.tool_calls:
-                print("Tool: ", tc['name'])
-                print("Arguments: ", tc['args'])
+                print_formatted_text(
+                    FormattedText([(
+                        "dim", 
+                        f">> {tc['name']}({tc['args']})"
+                    )]),
+                    end="\n"
+                )
         
         return {
             "coder_messages": [response],
@@ -269,7 +295,6 @@ def create_tool_execute_node(tool_registry: ToolRegistry):
             
             start = time.time()
             try:
-                print("\n\ntool_name: ", tc_name, " ", tc_args, " ", tc_id, "\n\n")
                 result = await tool_registry.call(tc_name, tc_args)
             except (asyncio.CancelledError, KeyboardInterrupt):
                 interrupted = True

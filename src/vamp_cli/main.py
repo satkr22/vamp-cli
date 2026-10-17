@@ -3,7 +3,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 from prompt_toolkit import PromptSession, print_formatted_text
-from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from vamp_cli.workspace.workspace import Workspace
@@ -159,7 +159,13 @@ async def streaming(
     thinking_open = False
 
     if isinstance(payload, dict):
-        print("mode:", payload["mode"])
+        print_formatted_text(
+            FormattedText([(
+                "dim",
+                F"\nMode: {payload["mode"]}"
+            )]),
+            end="\n"
+        )
 
     try:
         async for event in graph.astream_events(
@@ -191,14 +197,28 @@ async def streaming(
 
                 if reasoning_chunk:
                     if not thinking_open:
-                        print("Thinking:\n", end="", flush=True)
+                        # print("Thinking:\n", end="", flush=True)
+                        print_formatted_text(
+                            FormattedText([(
+                                "dim",
+                                f"\nThinking:\n"
+                            )]),
+                            end=""
+                        )
                         thinking_open = True
-                    print(reasoning_chunk, end="", flush=True)
+                    # print(reasoning_chunk, end="", flush=True)
+                    print_formatted_text(
+                        FormattedText([(
+                            "dim",
+                            reasoning_chunk
+                        )]),
+                        end=""
+                    )
 
                 # 2. capture final human text
                 elif chunk.content:
                     if thinking_open:
-                        print("\n\nResponse:\n", end="", flush=True)
+                        print("\n\n", end="", flush=True)
                         thinking_open = False
                     print(chunk.content, end="", flush=True)
 
@@ -219,16 +239,6 @@ async def streaming(
 
     print("\n")
     return call_usage
-
-
-# ANSI helpers
-_DIM   = "\033[2m"
-_BOLD  = "\033[1m"
-_CYAN  = "\033[36m"
-_GREEN = "\033[32m"
-_YELLOW = "\033[33m"
-_RED   = "\033[31m"
-_RESET = "\033[0m"
 
 async def main(resume_id: str | None = None):
 
@@ -337,27 +347,65 @@ async def main(resume_id: str | None = None):
             #     f"checkpointer={resumed.checkpoint_source}) --"
             # )
             # print_transcript(resumed.events, header=header)
-            # print("\n── End of history --\n")
+            # print("\n-- End of history --\n")
 
 
         # banner
         session = PromptSession()
-        print("\nVAMP-CLI Agent Workspace Initialized.")
-        print(f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else ""))
         
-        print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
-        print("\nType /mode to select normal or plan mode.")
+        print_formatted_text(
+            FormattedText([(
+                "bold blue", 
+                f"\nVAMP-CLI"
+            )]),
+            end="\n"
+        )
+        print_formatted_text(
+            FormattedText([(
+                "bold blue", 
+                f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else "")
+            )]),
+            end="\n"
+        )
+        # print_formatted_text(
+        #     FormattedText([(
+        #         "bold magenta", 
+        #         "\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n"
+        #     )]),
+        #     end="\n"
+        # )
+        # print_formatted_text(
+        #     FormattedText([(
+        #         "bold magenta", 
+        #         "\nType /mode to select normal or plan mode."
+        #     )]),
+        #     end="\n"
+        # )
+        
+        print_formatted_text(
+            FormattedText([(
+                "bold blue", 
+                "\nCommands:\n-- /mode: select normal or plan mode.\n-- /exit or /quit: exit cli\n-- /fork: fork a session.\n-- /branches: view branches of session.\n-- /compat: conversation compaction.\n"
+            )]),
+            end="\n"
+        )
+        
+        # print("\nVAMP-CLI Agent Workspace Initialized.")
+        # print(f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else ""))
+        
+        # print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
+        # print("\nType /mode to select normal or plan mode.")
         
         if resumed:
             print(f"events loaded: {len(resumed.events)}")
             print(f"checkpointer: {resumed.checkpoint_source}")
             print(f"selected mode: {resumed.selected_mode}")
-            print(f"executed mode: {resumed.executed_mode}")
+            print(f"executed mode: {resumed.executed_mode}\n")
             for w in resumed.warnings:
-                print(f"  [warn] {w}")
+                print(f"  [warn] {w}\n")
             
             print_transcript(resumed.events)
-            print("\n── End of history --\n")
+            print("\n-- End of history --\n")
                 
         
 
@@ -501,7 +549,7 @@ async def main(resume_id: str | None = None):
                                 f"messages={len(new_state['coder_messages'])}c/"
                                 f"{len(new_state['planner_messages'])}p")
                             print_transcript(chain, header=f"-- Branch {target_leaf} --")
-                            print("\n── End of history --\n")
+                            print("\n-- End of history --\n")
                             continue
 
                         # /fork
@@ -601,7 +649,7 @@ async def main(resume_id: str | None = None):
                             print("Next message you type starts the new branch.\n")
 
                             print_transcript(chain, header=f"-- Forked branch {result['fork_uuid'][:8]} --")
-                            print("\n── End of history --\n")
+                            print("\n-- End of history --\n")
                             continue
                         
                         # /compact
@@ -629,14 +677,14 @@ async def main(resume_id: str | None = None):
 
                             print(f"\nWill compact {plan['event_count']} events "
                                 f"covering the earliest user turns up to (but not including) "
-                                f"the last {keep} — roughly ~{plan['est_tokens']} tokens.")
+                                f"the last {keep} - roughly ~{plan['est_tokens']} tokens.")
                             print(f"Keeping the last {keep} user turns intact.")
                             confirm = (await session.prompt_async("Proceed? [Y/n]: ")).strip().lower()
                             if confirm not in ("", "y", "yes"):
                                 print("Cancelled.")
                                 continue
 
-                            print("Summarizing…")
+                            print("Summarizing...")
                             try:
                                 result = await compact_session(
                                     log,
@@ -659,9 +707,9 @@ async def main(resume_id: str | None = None):
                                 f"~{result['tokens_before']} → ~{result['tokens_after']} tokens.")
                             print("Summary preview:\n")
                             preview = result["summary"].strip()
-                            print("  " + preview[:600].replace("\n", "\n  "))
-                            if len(preview) > 600:
-                                print("  …")
+                            print("  " + preview.replace("\n", "\n  "))
+                            # if len(preview) > 600:
+                            #     print("  ...")
                             print()
                             continue
                         
