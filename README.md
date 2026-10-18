@@ -40,7 +40,7 @@ Create and activate a virtual environment, then install the project (all depende
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install vamp-cli
 ```
 
 Confirm that Docker is available before starting the agent:
