@@ -164,7 +164,7 @@ async def streaming(
         print_formatted_text(
             FormattedText([(
                 "dim",
-                f"\nMode: {payload["mode"]}"
+                f"\nMode: {payload['mode']}"
             )]),
             end="\n"
         )
