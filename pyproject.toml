@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vamp-cli"
-version = "0.1.0"
+version = "0.1.4"
 authors = [
   { name = "Satyam Kumar", email = "satkr2208@gmail.com" }
 ]
-description = "CLI coding agent."
+description = "VAMP-CLI is an interactive coding agent for working in a local repository. It combines a planner, a coder, model fallbacks, workspace-aware file tools, and a Docker-backed command sandbox in one terminal application. The agent can inspect and edit files, search a codebase, run commands, maintain a task list, and ask for confirmation before executing potentially dangerous operations."
+
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -24,6 +25,8 @@ dependencies = [
     "pydantic",
     "rich",
     "typer",
+    "click",
+    "orjson",
     "pytest",
     "pyyaml",
     "pathspec",
@@ -33,11 +36,16 @@ dependencies = [
     "langchain-litellm",
     "langgraph-checkpoint-sqlite",
     "aiosqlite",
+    "mcp",
 ]
 
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+vamp_cli = ["*.md", "**/*.md", "**/*.yaml"]
+
 
 [project.scripts]
 vamp = "vamp_cli.main:start"

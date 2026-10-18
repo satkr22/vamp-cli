@@ -1,8 +1,13 @@
 import json
+import time
 import asyncio
 from typing import Any
+from prompt_toolkit import print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText, HTML
+from prompt_toolkit.styles import Style
 
-from langgraph.types import interrupt
+from langgraph.graph import END
+from langgraph.types import interrupt, Command
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, BaseMessage
 
@@ -12,7 +17,9 @@ from vamp_cli.agent.state import AgentState
 from vamp_cli.agent.status import FeedbackResponse
 from vamp_cli.agent.instructions import TODO_INSTRUCTIONS, PLAN_INSTRUCTIONS
 
-
+_dim_style = Style.from_dict({
+    'dimmed': '#767B7D', 
+})
 
 def create_planner_node(model: Runnable):
 
@@ -30,10 +37,25 @@ def create_planner_node(model: Runnable):
         )
         
         if response.tool_calls:
-            print(f"\n[planner] calling:")
+            print_formatted_text(
+                FormattedText([(
+                    "class:dimmed",
+                    "\n\n[planner] calling:"
+                )]),
+                style=_dim_style,
+                end="\n"
+            )
             for tc in response.tool_calls:
-                print("Tool: ", tc['name'])
-                print("Arguments: ", tc['args'])
+                print_formatted_text(
+                    FormattedText([(
+                        "class:dimmed", 
+                        f">> {str(tc['name'])}({str(tc['args'])})"
+                    )]),
+                    style=_dim_style,
+                    end="\n"
+                )
+                # print("Tool: ", tc['name'])
+                # print("Arguments: ", tc['args'])
         
         return {
             "planner_messages": [response],
@@ -82,25 +104,38 @@ def create_agent_node(model: Runnable):
                 
                 
                 
-        if not state.get("todo"):
-            message_to_send.append(SystemMessage(content=TODO_INSTRUCTIONS))
+        # if not state.get("todo"):
+        #     message_to_send.append(SystemMessage(content=TODO_INSTRUCTIONS))
             
-        if state.get("todo"):
-            turns_since_update = _turns_since_todo_update(state["coder_messages"])
-            if turns_since_update >= 5:
-                message_to_send.append(
-                    SystemMessage(content=_format_todo_reminder(state["todo"]))
-                )
+        # if state.get("todo"):
+        #     turns_since_update = _turns_since_todo_update(state["coder_messages"])
+        #     if turns_since_update >= 10:
+        #         message_to_send.append(
+        #             SystemMessage(content=_format_todo_reminder(state["todo"]))
+        #         )
         
         response: AIMessage = await model.with_config(config).ainvoke(message_to_send)
         
         # print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
         
         if response.tool_calls:
-            print(f"\n[coder] calling:")
+            print_formatted_text(
+                FormattedText([(
+                    "class:dimmed",
+                    "\n\n[coder] calling:"
+                )]),
+                style=_dim_style,
+                end="\n"
+            )
             for tc in response.tool_calls:
-                print("Tool: ", tc['name'])
-                print("Arguments: ", tc['args'])
+                print_formatted_text(
+                    FormattedText([(
+                        "class:dimmed", 
+                        f">> {str(tc['name'])}({str(tc['args'])})"
+                    )]),
+                    style=_dim_style,
+                    end="\n"
+                )
         
         return {
             "coder_messages": [response],
@@ -199,45 +234,85 @@ def create_tool_approve_node():
 
 def create_tool_execute_node(tool_registry: ToolRegistry):
     async def tool_execute_node(state: AgentState, config: RunnableConfig):
-        channel     = state["_pending_tool_channel"]
-        pending     = state.get("_pending_tool_calls", [])
-        approved    = set(state.get("_approved_tool_call_ids", []))
-        denied      = set(state.get("_denied_tool_call_ids", []))
+        channel = state["_pending_tool_channel"]
+        pending = state.get("_pending_tool_calls", [])
+        approved = set(state.get("_approved_tool_call_ids", []))
+        denied = set(state.get("_denied_tool_call_ids", []))
 
         tool_messages: list[ToolMessage] = []
         todo_update = None
+        
+        interrupted = False
+        
+        emitter = (config.get("configurable") or {}).get("emitter")
+        node_name = channel.replace("_messages", "") if channel else None
 
         for tc in pending:
             tc_id, tc_name, tc_args = tc["id"], tc["name"], tc.get("args") or {}
 
             if tc_id in denied:
+                content=(
+                    "CRITICAL ACCESS DENIED: The security administrator has "
+                    "EXPLICITLY FORBIDDEN executing the denied task in any way. "
+                    "MANDATE: cease all attempts to execute the denied task. "
+                    "Abort this task immediately and explain the restriction "
+                    "to the user. Do not retry. Move on to another task."
+                )
+                
                 tool_messages.append(ToolMessage(
-                    content=(
-                        "CRITICAL ACCESS DENIED: The security administrator has "
-                        "EXPLICITLY FORBIDDEN executing the denied task in any way. "
-                        "MANDATE: cease all attempts to execute the denied task. "
-                        "Abort this task immediately and explain the restriction "
-                        "to the user. Do not retry. Move on to another task."
-                    ),
+                    content=content,
                     tool_call_id=tc_id,
                     name=tc_name,
                     status="error",
                 ))
+                
+                if emitter is not None:
+                    emitter.emit_tool_result(
+                        tool_call_id=tc_id, tool_name=tc_name, node=node_name,
+                        status="denied", content=content, duration_ms=0,
+                    )
                 continue
 
-            if tc_id not in approved:               # defensive — should not happen
+            if tc_id not in approved:
+                content = f"Tool '{tc_name}' was not approved for execution."
                 tool_messages.append(ToolMessage(
-                    content=f"Tool '{tc_name}' was not approved for execution.",
+                    content=content,
                     tool_call_id=tc_id, name=tc_name, status="error",
                 ))
+                if emitter is not None:
+                    emitter.emit_tool_result(
+                        tool_call_id=tc_id, tool_name=tc_name, node=node_name,
+                        status="error", content=content, duration_ms=0,
+                    )
                 continue
-
+            
+            if interrupted:
+                content="[Skipped — session was interrupted by user before this tool ran]"
+                tool_messages.append(ToolMessage(
+                    content=content,
+                    tool_call_id=tc_id, name=tc_name, status="error",
+                ))
+                
+                if emitter is not None:
+                    emitter.emit_tool_result(
+                        tool_call_id=tc_id, tool_name=tc_name, node=node_name,
+                        status="error", content=content, duration_ms=0,
+                    )
+                continue
+            
+            start = time.time()
             try:
                 result = await tool_registry.call(tc_name, tc_args)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                interrupted = True
+                result = "[Tool execution was interrupted by user]"
+                status = "error"
             except Exception as e:
                 result = {"error": f"Tool '{tc_name}' failed: {e}"}
+                status = "error"
+            duration_ms = int((time.time() - start) * 1000)
 
-            if tc_name == "write_update_todos" and isinstance(result, str):
+            if tc_name == "write_update_todos" and isinstance(result, str) and not interrupted:
                 try:
                     todo_update = json.loads(result)
                 except json.JSONDecodeError:
@@ -250,10 +325,15 @@ def create_tool_execute_node(tool_registry: ToolRegistry):
                 name=tc_name,
                 status="success" if isinstance(result, str) else "error",
             ))
+            if emitter is not None:
+                emitter.emit_tool_result(
+                    tool_call_id=tc_id, tool_name=tc_name, node=node_name,
+                    status="success", content=string_result,
+                    duration_ms=duration_ms,
+                )
 
         update = {
             channel: tool_messages,
-            # "_pending_tool_channel":   None,
             "_pending_tool_calls":     [],
             "_dangerous_tool_call_ids": [],
             "_approved_tool_call_ids":  [],
@@ -261,6 +341,12 @@ def create_tool_execute_node(tool_registry: ToolRegistry):
         }
         if todo_update is not None:
             update["todo"] = todo_update
+            
+        # if interrupted:
+        #     # Save the state update, then END the graph invocation.
+        #     # Control returns to main(); the prompt shows again.
+        #     return Command(update=update, goto=END)
+        
         return update
 
     return tool_execute_node

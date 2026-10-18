@@ -13,6 +13,8 @@ verifying the result.
 
 1. Read before editing. Never assume a file's contents. Inspect relevant files
    first.
+   - NOTE: To read many file at once use tool `read_many_files` to save turns of api calls.
+   - NOTE: To read one file use tool `read_many_files`.
 
 2. Determine the complexity of the task before making changes.
    - For simple, localized tasks, you may proceed directly after understanding

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from langchain_core.runnables import Runnable
-from langchain_litellm import ChatLiteLLM
+# from langchain_litellm import ChatLiteLLM
 
 from vamp_cli.config.loader import get_api_key
 from vamp_cli.config.schema import AppConfig, ModelCapabilities, ModelConfig
@@ -14,7 +14,7 @@ from vamp_cli.llm.adapter_registry import AdapterRegistry
 from vamp_cli.llm.usage import UsageTracker, UsageSnapshot, _UsageCallback
 from vamp_cli.llm.debug_callbacks import DumpPayloadCallback
 
-log = logging.getLogger(__name__)
+# log = logging.getLogger(__name__)
 
 
 # Arguments that ChatLiteLLM accepts directly. Everything else in params is
@@ -54,7 +54,7 @@ class ModelRouter:
     ) -> None:
         self._config = config
         self._adapters = adapters or AdapterRegistry()
-        self._model_cache: dict[str, ChatLiteLLM] = {}
+        self._model_cache: dict[str, ChatLiteLLM] = {} # type: ignore
         self._runnable_cache: dict[tuple[str, tuple[str, ...], str | None], Runnable[Any, Any]] = {}
         self._usage = UsageTracker()
         self._lock = threading.RLock()
@@ -71,7 +71,8 @@ class ModelRouter:
         `tools` may be empty. When fallbacks exist, each fallback is bound to the
         same tool set BEFORE the fallback wrapper is created.
         """
-
+        
+        
         self._model_cfg(model_name)  # fail fast on unknown model name
         tool_list = tuple(tools or ())
         tool_key = tuple(self._tool_key(tool) for tool in tool_list)
@@ -168,7 +169,7 @@ class ModelRouter:
         
         return primary_runnable
 
-    def _get_base_model(self, model_name: str) -> ChatLiteLLM:
+    def _get_base_model(self, model_name: str) -> ChatLiteLLM: # type: ignore
         with self._lock:
             cached = self._model_cache.get(model_name)
             if cached is not None:
@@ -186,7 +187,10 @@ class ModelRouter:
                 f"Unknown model '{model_name}'. Defined models: {sorted(self._config.models)}"
             ) from None
 
-    def _build(self, model_name: str) -> ChatLiteLLM:
+    def _build(self, model_name: str) -> ChatLiteLLM: # type: ignore
+        
+        from langchain_litellm import ChatLiteLLM
+        
         cfg = self._model_cfg(model_name)
 
         direct = {k: v for k, v in cfg.params.items() if k in _DIRECT_PARAMS}
@@ -209,11 +213,11 @@ class ModelRouter:
         if extra:
             kwargs["model_kwargs"] = extra
 
-        log.info(
-            "Building ChatLiteLLM '%s' -> %s",
-            model_name,
-            cfg.model,
-        )
+        # log.info(
+        #     "Building ChatLiteLLM '%s' -> %s",
+        #     model_name,
+        #     cfg.model,
+        # )
 
         return ChatLiteLLM(**kwargs)
 

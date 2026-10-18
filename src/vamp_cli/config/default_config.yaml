@@ -1,0 +1,291 @@
+models:
+  qwen:
+    model: dashscope/qwen3.6-flash
+    api_base: https://ws-n7c4pdh4ldno9hkc.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+      # - openai
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      context_window: 128000
+      
+      # (for DashScope native OpenAI mode)
+      reasoning_param: enable_thinking
+      reasoning_value: true
+      
+      # (general)
+      # reasoning_param: thinking
+      # reasoning_value:
+      #   type: enabled
+      #   budget_tokens: 4000
+
+
+  openai:
+    model: openai/gpt-5.6-luna
+    api_base: 
+    api_key_env: OPENAI_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      reasoning_param: reasoning_effort
+      reasoning_value: medium # Options: low, medium, high
+      context_window: 128000
+
+
+  anthropic:
+    model: anthropic/claude-opus-5-5
+    api_base: 
+    api_key_env: ANTHROPIC_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      reasoning_param: thinking
+      reasoning_value:
+        type: adaptive
+      context_window: 128000
+      # or (for Opus 4.5, Sonnet 4.5, Haiku 4.5)
+      # reasoning_param: thinking
+      # reasoning_value:
+      #   type: enabled
+      #   budget_tokens: 4000
+
+
+
+  deepseek:
+    model: deepseek/deepseek-v4
+    api_base:
+    api_key_env: DEEPSEEK_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      reasoning_param: reasoning_effort
+      reasoning_value: high # Options: low, high, max      context_window: 128000
+
+
+
+  kimi:
+    model: kimi/kimi
+    api_base:
+    api_key_env: KIMI_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      reasoning_param: reasoning_effort
+      reasoning_value: high # Options: low, high, max
+      context_window: 128000
+
+
+  gork:
+    model: gork/gork
+    api_base:
+    api_key_env: GORK_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      reasoning_param: reasoning_effort
+      reasoning_value: high # Options: low, high, max, xhigh
+      context_window: 128000
+
+
+  gemini:
+    model: gemini/gemini
+    api_base:
+    api_key_env: GEMINI_API_KEY
+    adapter: reasoning
+    params:
+      temperature: 0.2
+      max_tokens: 8192
+      max_retries: 2
+      streaming: true
+    fallbacks: []
+    capabilities:
+      supports_tools: true
+      supports_parallel_tools: false
+      supports_streaming: true
+      supports_reasoning: true
+      context_window: 128000
+
+      # for gemini 2.5 series
+      reasoning_param: thinking_config
+      reasoning_value:
+        thinking_budget: 4000 # -1 for dynamic, 0 to disable, or an explicit integer budget
+
+      # for gemini 3/4 series  
+      # reasoning_param: thinking_config
+      # reasoning_value:
+      #   thinking_level: high  # Options: minimal, low, medium, high
+
+
+profiles:
+  default_coder:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - read_many_files
+      - apply_search_replace
+      - write_file
+      - file_search
+      - ripgrep_search
+      - execute_command
+      - write_update_todos
+    prompt: prompts/coder.md
+
+  default_planner:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - read_many_files
+      - file_search
+      - ripgrep_search
+      - submit_plan
+      - execute_command
+    prompt: prompts/planner.md
+
+  planner:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - read_many_files
+      - file_search
+      - ripgrep_search
+      - submit_plan
+      - execute_command
+    prompt: prompts/planner.md
+
+  coder:
+    model: qwen
+    tools:
+      - list_dir
+      - read_file
+      - read_many_files
+      - apply_search_replace
+      - write_file
+      - file_search
+      - ripgrep_search
+      - execute_command
+      - write_update_todos
+    prompt: prompts/coder.md
+
+default_profile: 
+  - default_coder
+  - default_planner
+
+
+
+
+# reasoning styles
+
+# 1. openai
+#   reasoning_param: "reasoning_effort"
+#   reasoning_value: "medium" # Options: "low", "medium", "high"
+
+# 2. qwen
+#   reasoning_param: "thinking"
+#   reasoning_value:
+#     type: "enabled"
+#     budget_tokens: 4000
+
+# 4. qwen (for DashScope native OpenAI mode)
+#   reasoning_param: "enable_thinking"
+#   reasoning_value: "true"
+
+# 5. anthropic (newer models) 
+#   reasoning_param: "thinking"
+#   reasoning_value:
+#     type: "adaptive"
+
+# 6. anthropic (older models)
+#     Models: [Claude Mythos Preview, Claude Opus 4.6, Claude Sonnet 4.6,	Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5]
+#   reasoning_param: "thinking"
+#   reasoning_value:
+#     type: "enabled"
+#     budget_tokens: 4000
+
+# 7. deepseek
+# Models: [deepseek-reasoner, deepseek-v4]
+#   reasoning_param: "reasoning_effort"
+#   reasoning_value: "high" # Options: "low", "high", "max"
+
+# 8. deepseek (for deepseek's anthropic style models)
+#   reasoning_param: "thinking"
+#   reasoning_value: 
+#     type: "enabled"
+
+# 9. kimi
+#   reasoning_param: "reasoning_effort"
+#   reasoning_value: "high" # Options: "low", "high", "max" (default: "max")
+
+# 10. grok/xAi
+# reasoning_param: "reasoning_effort"
+# reasoning_value: "high" # Options: "low", "medium", "high", "xhigh"
+
+# 11. gemini (Gemini 2.5 series)
+# reasoning_param: "thinking_config"
+# reasoning_value:
+#   thinking_budget: 4000 # -1 for dynamic, 0 to disable, or an explicit integer budget
+
+# 12. gemini (Gemini 3 / Gemini 4 series)
+# reasoning_param: "thinking_config"
+# reasoning_value:
+#   thinking_level: "high" # Options: "minimal", "low", "medium", "high"
+
+# 13. gemini (If connecting to Gemini via Google's OpenAI-compatible endpoint)
+# reasoning_param: "reasoning_effort"
+# reasoning_value: "high" # Options: "low", "medium", "high"

@@ -15,6 +15,9 @@ Explore the repository using the available read-only tools and determine what ne
 
 Then produce a clear, ordered implementation plan.
 
+NOTE: To read many file at once use tool `read_many_files` to save turns of api calls.
+NOTE: To read one file use tool `read_many_files`.
+
 ### NOTE
 USE 'submit_plan' tool to sumit your final plan if you have made any plan. Otherwise DO NOT use 'submit_plan'
 

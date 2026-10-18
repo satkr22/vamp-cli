@@ -13,8 +13,11 @@ class ModelCapabilities(BaseModel):
     supports_tools: bool = True
     supports_parallel_tools: bool = True
     supports_streaming: bool = True
+    
     supports_reasoning: bool = False
-    reasoning_param: str | None = None
+    reasoning_param: str | None = None  # ex: "reasoning_effort" or "thinking"
+    reasoning_value: Any | None = None  # ex: "high" or {"type": "enabled", "budget_tokens": 4000}
+    
     context_window: int = 128_000
 
 

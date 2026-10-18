@@ -160,7 +160,7 @@ class EventEmitter:
                 display logic unchanged
     """
 
-    def __init__(self, log: EventLog, *, tool_output_limit: int = 64_000) -> None:
+    def __init__(self, log: EventLog, *, tool_output_limit: int = 16_000) -> None:
         self.log = log
         self._tool_output_limit = tool_output_limit
 
@@ -174,6 +174,9 @@ class EventEmitter:
         # Populated when an assistant_message carrying tool_calls is emitted,
         # consumed when the matching tool_result is emitted.
         self._tool_call_to_node: dict[str, str | None] = {}
+        
+        # last input_tokens reported by any model call in this turn
+        self.last_input_tokens: int = 0
 
     # public entry point 
     async def consume(self, event: dict) -> None:
@@ -239,6 +242,9 @@ class EventEmitter:
             um = getattr(final_msg, "usage_metadata", None)
             if um:
                 usage = dict(um)
+        
+        if usage and isinstance(usage.get("input_tokens"), int):
+            self.last_input_tokens = usage["input_tokens"]
 
         meta = buf.get("meta") or {}
         node = meta.get("langgraph_node")
@@ -328,6 +334,29 @@ class EventEmitter:
             "truncated":    False,
             "content_len":  0,
             "duration_ms":  int((time.time() - meta.get("started_at", time.time())) * 1000),
+        })
+        
+    def emit_tool_result(
+        self,
+        *,
+        tool_call_id: str,
+        tool_name:    str,
+        node:         str | None,
+        status:       str,
+        content:      str,
+        duration_ms:  int,
+    ) -> None:
+        """Public hook for callers that bypass LangChain's callback stream."""
+        text, truncated = _truncate(content or "", self._tool_output_limit)
+        self.log.emit("tool_result", {
+            "tool_call_id": tool_call_id,
+            "tool_name":    tool_name,
+            "node":         node,
+            "status":       status,
+            "content":      text,
+            "truncated":    truncated,
+            "content_len":  len(content or ""),
+            "duration_ms":  duration_ms,
         })
 
 

@@ -72,7 +72,8 @@ DEFAULT_FSYNC_TYPES = frozenset({
 
 
 # Queue item: (event_type, data, done_future_or_None)
-_QueueItem = tuple[str, dict[str, Any], "asyncio.Future[str] | None"]
+# _QueueItem type
+_QueueItem = tuple[str, dict[str, Any], "asyncio.Future[str] | None", "str | None"]
 
 
 # EventLog
@@ -163,9 +164,9 @@ class EventLog:
             if item is None:
                 self._queue.task_done()
                 return
-            event_type, data, done = item
+            event_type, data, done, parent_uuid = item
             try:
-                event_uuid = self._write_event(event_type, data)
+                event_uuid = self._write_event(event_type, data, parent_uuid)
                 if done is not None and not done.done():
                     done.set_result(event_uuid)
             except Exception as e:
@@ -174,7 +175,12 @@ class EventLog:
             finally:
                 self._queue.task_done()
 
-    def _write_event(self, event_type: str, data: dict[str, Any]) -> str:
+    def _write_event(
+        self, 
+        event_type: str, 
+        data: dict[str, Any],
+        parent_uuid: str | None = None,
+    ) -> str:
         """Synchronous - runs only inside the writer task."""
         payload = self._redactor(event_type, dict(data))
 
@@ -182,7 +188,7 @@ class EventLog:
         envelope = {
             "type": event_type,
             "uuid": event_uuid,
-            "parentUuid": self._last_uuid,
+            "parentUuid":  parent_uuid if parent_uuid is not None else self._last_uuid,
             "sessionId": self.session_id,
             "timestamp": _iso_now(),
             "cwd": self.cwd,
@@ -202,22 +208,24 @@ class EventLog:
         return event_uuid
 
     # public API 
-    def emit(self, event_type: str, data: dict[str, Any] | None = None) -> None:
+    def emit(self, event_type: str, data: dict[str, Any] | None = None, *, parent_uuid=None) -> None:
         """Fire-and-forget. Non-blocking. FIFO ordering guaranteed."""
         if self._closed:
             raise RuntimeError("EventLog is closed")
-        self._queue.put_nowait((event_type, dict(data or {}), None))
+        self._queue.put_nowait((event_type, dict(data or {}), None, parent_uuid))
 
     async def append(
         self,
         event_type: str,
         data: dict[str, Any] | None = None,
+        *,
+        parent_uuid=None,
     ) -> str:
         """Enqueue and wait for the durable write to complete."""
         if self._closed:
             raise RuntimeError("EventLog is closed")
         done: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-        await self._queue.put((event_type, dict(data or {}), done))
+        await self._queue.put((event_type, dict(data or {}), done, parent_uuid))
         return await done
 
     async def flush(self) -> None:

@@ -1,0 +1,1 @@
+recursive-include src/vamp_cli/config *.yaml
