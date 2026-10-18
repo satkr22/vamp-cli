@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText, HTML
+from prompt_toolkit.styles import Style
 
 from langgraph.graph import END
 from langgraph.types import interrupt, Command
@@ -16,7 +17,9 @@ from vamp_cli.agent.state import AgentState
 from vamp_cli.agent.status import FeedbackResponse
 from vamp_cli.agent.instructions import TODO_INSTRUCTIONS, PLAN_INSTRUCTIONS
 
-
+_dim_style = Style.from_dict({
+    'dimmed': '#767B7D', 
+})
 
 def create_planner_node(model: Runnable):
 
@@ -36,17 +39,19 @@ def create_planner_node(model: Runnable):
         if response.tool_calls:
             print_formatted_text(
                 FormattedText([(
-                    "dim",
+                    "class:dimmed",
                     "\n\n[planner] calling:"
                 )]),
+                style=_dim_style,
                 end="\n"
             )
             for tc in response.tool_calls:
                 print_formatted_text(
                     FormattedText([(
-                        "dim", 
-                        f">> {tc['name']}({tc['args']})"
+                        "class:dimmed", 
+                        f">> {str(tc['name'])}({str(tc['args'])})"
                     )]),
+                    style=_dim_style,
                     end="\n"
                 )
                 # print("Tool: ", tc['name'])
@@ -99,15 +104,15 @@ def create_agent_node(model: Runnable):
                 
                 
                 
-        if not state.get("todo"):
-            message_to_send.append(SystemMessage(content=TODO_INSTRUCTIONS))
+        # if not state.get("todo"):
+        #     message_to_send.append(SystemMessage(content=TODO_INSTRUCTIONS))
             
-        if state.get("todo"):
-            turns_since_update = _turns_since_todo_update(state["coder_messages"])
-            if turns_since_update >= 10:
-                message_to_send.append(
-                    SystemMessage(content=_format_todo_reminder(state["todo"]))
-                )
+        # if state.get("todo"):
+        #     turns_since_update = _turns_since_todo_update(state["coder_messages"])
+        #     if turns_since_update >= 10:
+        #         message_to_send.append(
+        #             SystemMessage(content=_format_todo_reminder(state["todo"]))
+        #         )
         
         response: AIMessage = await model.with_config(config).ainvoke(message_to_send)
         
@@ -116,17 +121,19 @@ def create_agent_node(model: Runnable):
         if response.tool_calls:
             print_formatted_text(
                 FormattedText([(
-                    "dim",
+                    "class:dimmed",
                     "\n\n[coder] calling:"
                 )]),
+                style=_dim_style,
                 end="\n"
             )
             for tc in response.tool_calls:
                 print_formatted_text(
                     FormattedText([(
-                        "dim", 
-                        f">> {tc['name']}({tc['args']})"
+                        "class:dimmed", 
+                        f">> {str(tc['name'])}({str(tc['args'])})"
                     )]),
+                    style=_dim_style,
                     end="\n"
                 )
         

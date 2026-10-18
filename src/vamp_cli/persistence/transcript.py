@@ -33,7 +33,7 @@ def render_transcript(
     shadowed, compaction_by_uuid = build_shadow_map(chain)
 
     # prompt_toolkit style names.
-    DIM = "dim"
+    DIM = "gray"
     BOLD_CYAN = "bold cyan"
     BOLD_GREEN = "bold green"
     GREEN = "green"

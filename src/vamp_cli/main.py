@@ -1,3 +1,4 @@
+import os
 import sys
 import asyncio
 from pathlib import Path
@@ -5,6 +6,7 @@ from typing import Any
 import click  
 import yaml  
 from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
 
@@ -30,6 +32,7 @@ from vamp_cli.agent.graph import create_graph
 from vamp_cli.agent.roles import AgentRole
 from vamp_cli.agent.status import FeedbackResponse
 from vamp_cli.agent.context_sync import mode_switch_sync
+from vamp_cli.agent.instructions import TODO_INSTRUCTIONS
 
 from vamp_cli.persistence.emitter import EventEmitter
 from vamp_cli.persistence.event_log import EventLog, uuid7
@@ -64,6 +67,9 @@ __VERSION__ = "0.1.0"
 
 PROJECT_DIR = str(Path.cwd())
 
+_dim_style = Style.from_dict({
+    'dimmed': "#767B7D", 
+})
 
 def create(event_type: str, data: dict[str, Any]) -> str:
     """Serializes events into structured strings"""
@@ -163,9 +169,10 @@ async def streaming(
     if isinstance(payload, dict):
         print_formatted_text(
             FormattedText([(
-                "dim",
+                "class:dimmed",
                 f"\nMode: {payload['mode']}"
             )]),
+            style=_dim_style,
             end="\n"
         )
     
@@ -199,24 +206,24 @@ async def streaming(
 
                 if reasoning_chunk:
                     if not thinking_open:
-                        # print("Thinking:\n", end="", flush=True)
                         print_formatted_text(
                             FormattedText([(
-                                "dim",
+                                "class:dimmed",
                                 f"\nThinking:\n"
                             )]),
+                            style=_dim_style,
                             end=""
                         )
                         thinking_open = True
-                    # print(reasoning_chunk, end="", flush=True)
+                    
                     print_formatted_text(
                         FormattedText([(
-                            "dim",
-                            reasoning_chunk
+                            "class:dimmed",
+                            str(reasoning_chunk)
                         )]),
+                        style=_dim_style,
                         end=""
                     )
-
                 # 2. capture final human text
                 elif chunk.content:
                     if thinking_open:
@@ -236,7 +243,7 @@ async def streaming(
         print("\n[aborted by user]")
         return call_usage
     except Exception as e:
-        print("\n[Some error happened]: ", e)
+        print("\n[Some error happened]: ")
         return call_usage
 
     print("\n")
@@ -821,6 +828,7 @@ async def main(resume_id: str | None = None):
                                         content=coder_profile.system_prompt,
                                         id="coder_system_prompt"
                                     ),
+                                    SystemMessage(content=TODO_INSTRUCTIONS),
                                     HumanMessage(content=user_input),
                                 ],
                                 "task": user_input,
