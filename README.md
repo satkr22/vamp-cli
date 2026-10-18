@@ -28,7 +28,7 @@ The agent can inspect and edit files, search a codebase, run commands, maintain 
 
 - Python 3.11 or newer
 - Docker Engine or Docker Desktop, running and accessible to the current user
-- An API key for each model configured in `~/.vamp/config.yaml`
+- An API key env var for each model configured in `~/.vamp/config.yaml` (it gets created in first run).
 
 The first run automatically builds the `vamp-sandbox:latest` image from [`src/vamp_cli/sandbox/Dockerfile`](src/vamp_cli/sandbox/Dockerfile) when it is not already available locally. The image includes Python, Node.js, Git, `ripgrep`, `fd`, and common build tools.
 
@@ -51,7 +51,7 @@ docker info
 
 ## Configuration
 
-Model and profile configuration lives in [`~/.vamp/config.yaml`](~/.vamp/config.yaml). API keys are read from environment variables named by each model's `api_key_env` field; keys are not read from YAML values directly.
+Model and profile configuration lives in [`/src/vamp_cli/config/default_config.yaml`](/src/vamp_cli/config/default_config.yaml)(this is used to create `config.yaml` for first run). After first run `~/.vamp/config.yaml` is created and vamp-cli reads from this always. API keys are read from environment variables named by each model's `api_key_env` field; keys are not read from YAML values directly.
 
 The checked-in default configuration defines `qwen` and `openai`, so both variables must be present unless you edit the configuration to remove or replace one of those models:
 
