@@ -9,8 +9,10 @@ from pydantic import ValidationError
 
 from vamp_cli.config.schema import AppConfig, ModelConfig
 
-CONFIG_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = CONFIG_DIR / "config.yaml"
+DEFAULT_CONFIG_DIR = Path(__file__).resolve().parent
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "default_config.yaml"
+
+CONFIG_PATH = Path.home() / ".vamp/config.yaml"
 
 class ConfigError(ValueError):
     """Raised when configuration is structurally invalid or incomplete."""
@@ -21,8 +23,19 @@ def load_config() -> AppConfig:
 
     This is the only place in the application that reads config.yaml.
     """
+    
     config_path = CONFIG_PATH
 
+    if not config_path.exists():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        with open(config_path, "x", encoding="utf-8") as f:
+            f.write(content)
+    
+           
     if not config_path.is_file():
         raise ConfigError(f"Config file does not exist: {config_path}")
 
@@ -56,15 +69,22 @@ def _resolve_api_keys(config: AppConfig) -> None:
     for name, cfg in config.models.items():
         if not cfg.api_key_env:
             continue
+        try:
+            value = os.getenv(cfg.api_key_env)
+            if not value:
+                # print(
+                #     ConfigError(
+                #         f"Model '{name}' requires environment variable "
+                #         f"'{cfg.api_key_env}', but it is not set."
+                #     )
+                # )
+                cfg.api_key = "EXAMPLEMODEL_API_KEY"
+                continue
+                
+            cfg.api_key = value
+        except Exception:
+            pass
 
-        value = os.getenv(cfg.api_key_env)
-        if not value:
-            raise ConfigError(
-                f"Model '{name}' requires environment variable "
-                f"'{cfg.api_key_env}', but it is not set."
-            )
-
-        cfg.api_key = value
 
 
 def _validate_references(config: AppConfig) -> None:

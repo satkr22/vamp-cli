@@ -2,6 +2,8 @@ import sys
 import asyncio
 from pathlib import Path
 from typing import Any
+import click  
+import yaml  
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -166,7 +168,7 @@ async def streaming(
             )]),
             end="\n"
         )
-
+    
     try:
         async for event in graph.astream_events(
             payload, config=session_config, version="v2"
@@ -234,11 +236,37 @@ async def streaming(
         print("\n[aborted by user]")
         return call_usage
     except Exception as e:
-        print("\n[Some error happened]")
+        print("\n[Some error happened]: ", e)
         return call_usage
 
     print("\n")
     return call_usage
+
+
+def edit_config(path: str | Path) -> str | None:
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+
+    while True:
+        try:
+            edited = click.edit(text, extension=".yaml")  # blocks until editor closes
+            if edited is None:  # user quit without saving
+                return None
+            
+            try:
+                data = yaml.safe_load(edited)
+            except yaml.YAMLError as e:
+                click.echo(f"Invalid YAML:\n{e}")
+                if not click.confirm("Re-open editor?", default=True):
+                    return None
+                text = edited  # keep changes so can be fixed
+                continue
+            
+            path.write_text(edited, encoding="utf-8")  # only save once valid
+            return "ok"
+        
+        except click.ClickException as e:
+            raise
 
 async def main(resume_id: str | None = None):
 
@@ -339,70 +367,40 @@ async def main(resume_id: str | None = None):
                 THREAD_ID = resumed.thread_id
                 session_config["configurable"]["thread_id"] = THREAD_ID
                 print(f"[resume] using forked thread: {THREAD_ID}")
-                
-            # header = (
-            #     f"-- Resumed session: {SESSION_ID} "
-            #     f"({len(resumed.events)} events, "
-            #     f"mode={resumed.selected_mode}, "
-            #     f"checkpointer={resumed.checkpoint_source}) --"
-            # )
-            # print_transcript(resumed.events, header=header)
-            # print("\n-- End of history --\n")
-
 
         # banner
         session = PromptSession()
         
         print_formatted_text(
             FormattedText([(
-                "bold blue", 
+                "yellow", 
                 f"\nVAMP-CLI"
             )]),
             end="\n"
         )
         print_formatted_text(
             FormattedText([(
-                "bold blue", 
+                "yellow", 
                 f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else "")
             )]),
             end="\n"
         )
-        # print_formatted_text(
-        #     FormattedText([(
-        #         "bold magenta", 
-        #         "\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n"
-        #     )]),
-        #     end="\n"
-        # )
-        # print_formatted_text(
-        #     FormattedText([(
-        #         "bold magenta", 
-        #         "\nType /mode to select normal or plan mode."
-        #     )]),
-        #     end="\n"
-        # )
-        
         print_formatted_text(
             FormattedText([(
-                "bold blue", 
-                "\nCommands:\n-- /mode: select normal or plan mode.\n-- /exit or /quit: exit cli\n-- /fork: fork a session.\n-- /branches: view branches of session.\n-- /compat: conversation compaction.\n"
+                "yellow", 
+                "\nCommands:\n-- /mode: select normal or plan mode.\n-- /exit or /quit: exit cli\n-- /fork: fork a session.\n-- /branches: view branches of session.\n-- /compat: conversation compaction.\n-- /config: change model and profile configurations.\n\n"
             )]),
             end="\n"
         )
-        
-        # print("\nVAMP-CLI Agent Workspace Initialized.")
-        # print(f"\nSession: {SESSION_ID}" + (" (resumed)" if is_resume else ""))
-        
-        # print("\nType '/exit' or '/quit' to exit this and clear docker instances safely.\n")
-        # print("\nType /mode to select normal or plan mode.")
+
         
         if resumed:
-            print(f"events loaded: {len(resumed.events)}")
-            print(f"checkpointer: {resumed.checkpoint_source}")
-            print(f"selected mode: {resumed.selected_mode}")
-            print(f"executed mode: {resumed.executed_mode}\n")
+            # print(f"events loaded: {len(resumed.events)}")
+            # print(f"checkpointer: {resumed.checkpoint_source}")
+            # print(f"selected mode: {resumed.selected_mode}")
+            # print(f"executed mode: {resumed.executed_mode}\n")
             for w in resumed.warnings:
-                print(f"  [warn] {w}\n")
+                print(f"\n  [warn] {w}\n")
             
             print_transcript(resumed.events)
             print("\n-- End of history --\n")
@@ -488,6 +486,32 @@ async def main(resume_id: str | None = None):
                         if not user_input:
                             continue
                         
+                        # /config
+                        if user_input == "/config":
+                            
+                            try:
+                                # open ~/.vamp/config.yaml
+                                config = edit_config(Path.home() / ".vamp/config.yaml")
+                                if config is None:
+                                    print("\nNo changes made.")
+                                    continue
+                                print("\nRestart 'vamp' to load changed configuration.")
+                                continue
+                            
+                            except yaml.YAMLError as e:
+                                print(f"Invalid YAML:\n{e}")
+                                continue
+                            
+                            except click.ClickException as e:
+                                click.echo(f"Could not open an editor: {e}")
+                                click.echo("Set the EDITOR environment variable, e.g. EDITOR=nano")
+                                continue
+                                
+                            except Exception as e:
+                                print("\nConfiguration changes failed.\n\n")
+                                continue
+                            
+                             
                         # /branches
                         if user_input == "/branches":
                             chain = load_all_events(sessions_dir, SESSION_ID)
@@ -638,8 +662,8 @@ async def main(resume_id: str | None = None):
 
                             chain = load_chain(sessions_dir, SESSION_ID, leaf_uuid=result["fork_uuid"])
                             disp = derive_display_state(chain)
-                            selected_mode      = disp["selected_mode"]
-                            executed_mode      = disp["executed_mode"]
+                            selected_mode = disp["selected_mode"]
+                            executed_mode = disp["executed_mode"]
                             is_session_started = disp["is_session_started"]
 
                             print(f"Forked. new_thread={THREAD_ID}")

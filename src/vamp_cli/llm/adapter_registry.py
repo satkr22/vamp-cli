@@ -1,6 +1,7 @@
 from vamp_cli.llm.adapter import (
     ModelAdapter,
     PassThroughAdapter,
+    ReasoningAdapter
 )
 
 
@@ -10,6 +11,7 @@ class AdapterRegistry:
         adapters: dict[str, ModelAdapter] | None = None,
     ) -> None:
         self._adapters = {
+            "reasoning": ReasoningAdapter(),
             "default": PassThroughAdapter(),
             **(adapters or {}),
         }

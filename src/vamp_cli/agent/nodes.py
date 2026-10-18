@@ -104,7 +104,7 @@ def create_agent_node(model: Runnable):
             
         if state.get("todo"):
             turns_since_update = _turns_since_todo_update(state["coder_messages"])
-            if turns_since_update >= 5:
+            if turns_since_update >= 10:
                 message_to_send.append(
                     SystemMessage(content=_format_todo_reminder(state["todo"]))
                 )
