@@ -43,7 +43,7 @@ dependencies = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-vamp_cli = ["*.md", "**/*.md"]
+vamp_cli = ["*.md", "**/*.md", "**/*.yaml"]
 
 
 [project.scripts]
