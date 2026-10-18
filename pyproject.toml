@@ -42,6 +42,10 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+vamp_cli = ["*.md", "**/*.md"]
+
+
 [project.scripts]
 vamp = "vamp_cli.main:start"
 
