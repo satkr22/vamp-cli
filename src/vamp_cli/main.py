@@ -1,4 +1,3 @@
-import os
 import sys
 import asyncio
 from pathlib import Path
@@ -16,6 +15,7 @@ from vamp_cli.prompts.prompts import PromptStore
 
 from vamp_cli.utils.ignore import IgnoreMatcher
 from vamp_cli.utils.token_tracker import Token_Tracker
+from vamp_cli.utils.auto_complete import AtFileCompleter, expand_at_references
 
 from vamp_cli.sandbox.terminal import Terminal
 from vamp_cli.sandbox.docker import SandboxConfig
@@ -376,7 +376,9 @@ async def main(resume_id: str | None = None):
                 print(f"[resume] using forked thread: {THREAD_ID}")
 
         # banner
-        session = PromptSession()
+        session = PromptSession(
+            completer=AtFileCompleter(root_dir=PROJECT_DIR)
+        )
         
         print_formatted_text(
             FormattedText([(
@@ -492,6 +494,9 @@ async def main(resume_id: str | None = None):
                         )).strip()
                         if not user_input:
                             continue
+                        
+                        # Expand @file references
+                        user_input = expand_at_references(user_input, PROJECT_DIR)
                         
                         # /config
                         if user_input == "/config":

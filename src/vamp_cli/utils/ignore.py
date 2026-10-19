@@ -1,6 +1,14 @@
 import pathspec
 from pathlib import Path
 
+DEFAULT_IGNORE_LIST = [
+    ".git",
+    ".vscode",
+    "node_modules",
+    "dist/",
+    "logs",
+    "*.log",
+]
 
 class IgnoreMatcher:
     def __init__(self, repo_root: str) -> None:
@@ -30,6 +38,10 @@ class IgnoreMatcher:
     def should_ignore(self, path: str) -> bool:
         relative_path = Path(path).relative_to(self.repo_root).resolve()
         return self.spec.match_file(relative_path.as_posix())
+    
+    def should_keep(self, path: str) -> bool:
+        relative_path = Path(path).relative_to(self.repo_root).resolve()
+        return not self.spec.match_file(relative_path.as_posix())
     
 
             
