@@ -36,11 +36,23 @@ The first run automatically builds the `vamp-sandbox:latest` image from [`src/va
 
 Create and activate a virtual environment, then install the project (all dependencies will be installed itself):
 
+Virtual Env:
+
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
+```
+Package:
+
+```bash
 python -m pip install vamp-cli 
+```
+
+For development:
+
+```bash
+python -m pip install -e .
 ```
 
 Confirm that Docker is available before starting the agent:
