@@ -33,6 +33,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 
+from vamp_cli.agent.instructions import TODO_INSTRUCTIONS
 
 # Chain loading
 def load_chain(
@@ -171,6 +172,9 @@ def reconstruct_agent_state(
             coder_msgs.append(SystemMessage(
                 content=system_prompts["coder"], id="coder_system_prompt",
             ))
+            coder_msgs.append(
+                SystemMessage(content=TODO_INSTRUCTIONS)
+            )
         if system_prompts.get("planner"):
             planner_msgs.append(SystemMessage(
                 content=system_prompts["planner"], id="planner_system_prompt",

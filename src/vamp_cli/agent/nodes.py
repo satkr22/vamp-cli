@@ -9,7 +9,7 @@ from prompt_toolkit.styles import Style
 from langgraph.graph import END
 from langgraph.types import interrupt, Command
 from langchain_core.runnables import Runnable, RunnableConfig
-from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, BaseMessage
+from langchain_core.messages import ToolMessage, SystemMessage, AIMessage, BaseMessage, HumanMessage
 
 from vamp_cli.tools.registry import ToolRegistry
 from vamp_cli.agent.state import AgentState, TodoItem
@@ -103,16 +103,17 @@ def create_agent_node(model: Runnable):
                 message_to_send += [plan_message] + [plan_instruction]
                 
                 
-                
-        # if not state.get("todo"):
-        #     message_to_send.append(SystemMessage(content=TODO_INSTRUCTIONS))
-            
-        # if state.get("todo"):
-        #     turns_since_update = _turns_since_todo_update(state["coder_messages"])
-        #     if turns_since_update >= 10:
-        #         message_to_send.append(
-        #             SystemMessage(content=_format_todo_reminder(state["todo"]))
-        #         )
+        # print(f"\n\n\n------ CONTEXT START------\n\n")
+        # for mess in message_to_send:
+        #     if isinstance(mess, SystemMessage):
+        #         print("SystemMessage: ", end="")
+        #     if isinstance(mess, HumanMessage):
+        #         print("HumanMessage: ", end="")
+        #     if isinstance(mess, ToolMessage):
+        #         print("ToolMessage: ", end="")
+        #     print(mess)
+        #     print()
+        # print("\n\n------ CONTEXT END ------\n\n\n")
         
         response: AIMessage = await model.with_config(config).ainvoke(message_to_send)
         
@@ -341,11 +342,6 @@ def create_tool_execute_node(tool_registry: ToolRegistry):
         }
         if todo_update is not None:
             update["todo"] = todo_update
-            
-        # if interrupted:
-        #     # Save the state update, then END the graph invocation.
-        #     # Control returns to main(); the prompt shows again.
-        #     return Command(update=update, goto=END)
         
         return update
 

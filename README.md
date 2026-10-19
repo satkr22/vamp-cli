@@ -93,6 +93,7 @@ You:
 | Argument | Action |
 | --- | --- |
 | `--resume <id>` or `-r <id>` | Resume a previous session by its ID |
+| `--previous` or `-p` | Resume last session |
 | `--list` or `-l` | List all past sessions |
 
 Examples:

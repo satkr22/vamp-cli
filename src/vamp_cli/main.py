@@ -291,6 +291,7 @@ async def main(resume_id: str | None = None):
     is_resume = resume_id is not None
     SESSION_ID  = resume_id if is_resume else str(uuid7())
     
+    
     sessions_dir   = Path.home() / ".vamp" / "sessions"
     checkpoint_dir = Path.home() / ".vamp" / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -311,6 +312,12 @@ async def main(resume_id: str | None = None):
                 version=VERSION,
         )
         emitter = EventEmitter(log)
+        
+        last_session = sessions_dir / "last"
+        last_session.mkdir(parents=True, exist_ok=True)
+        
+        last_session_path = last_session / "last.head"
+        last_session_path.write_text(SESSION_ID, encoding="utf-8")
         
         THREAD_ID = SESSION_ID
     
@@ -990,6 +997,8 @@ async def main(resume_id: str | None = None):
                             continue
 
                     token_tracker.close()
+                    if emitter.last_input_tokens != 0:
+                        print(f"Current context window: {emitter.last_input_tokens}/{planner_profile.context_window if selected_mode == "plan" else coder_profile.context_window}\n\n")
 
             except KeyboardInterrupt:
                 print("\n[interrupted - returning to prompt]")
@@ -1014,6 +1023,11 @@ def start():
         i = args.index("--resume" if "--resume" in args else "-r")
         if i + 1 < len(args):
             resume_id = args[i + 1]
+            
+    if "--previous" in args or "-p" in args:
+        last_session = Path.home() / ".vamp" / "sessions" / "last" / "last.head"
+        if last_session.exists() and last_session.is_file():
+            resume_id = last_session.read_text()
 
     if list_flag:
         sessions_dir = Path.home() / ".vamp" / "sessions"
