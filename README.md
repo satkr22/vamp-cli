@@ -118,6 +118,7 @@ vamp --resume 01a145b4-5103-7014-97da-d5ca9c871d68
 | `/compact` | Summarize early conversation turns to reduce context usage |
 | `/compact <N>` | Compact keeping the last N turns intact (default: 4) |
 | `/config` | Change configurations of models, coder or planner profiles, and tool access. |
+| `@<file-path>` | Use `@` to select a file and ask agent about that file. |
 
 When the agent requests approval, answer `yes` to continue or `no` and provide a reason to deny the action. Approvals are used for plan implementation and security-sensitive tool calls such as destructive commands, package installation, or network access.
 
