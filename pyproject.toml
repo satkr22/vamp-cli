@@ -48,7 +48,7 @@ vamp_cli = ["*.md", "**/*.md", "**/*.yaml"]
 
 
 [project.scripts]
-vamp = "vamp_cli.main:start"
+vamp = "vamp_cli.cli:start"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
