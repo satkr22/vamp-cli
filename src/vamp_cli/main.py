@@ -62,7 +62,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
 
-__VERSION__ = "0.1.5"
+__VERSION__ = "0.1.6"
 PROJECT_DIR = str(Path.cwd())
 console = Console()
 
