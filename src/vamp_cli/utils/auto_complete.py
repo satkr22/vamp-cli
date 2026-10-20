@@ -58,16 +58,17 @@ class AtFileCompleter(Completer):
             )
             
             
-def expand_at_references(text: str, workspace_root: str) -> str:
+def expand_at_references(text: str, workspace_root: str) -> tuple[str, bool]:
     """
     Find all @path tokens in text, read the files, and append their contents.
     """
     # Matches @ followed by non-whitespace characters (paths)
     pattern = r"@([^\s@]+)"
     matches = re.findall(pattern, text)
-
+    attach = False
+    
     if not matches:
-        return text
+        return text, attach
 
     root = Path(workspace_root)
     attachments: list[str] = []
@@ -85,6 +86,8 @@ def expand_at_references(text: str, workspace_root: str) -> str:
             continue
 
     if not attachments:
-        return text
+        return text, attach
+    
+    attach = True
 
-    return text + "".join(attachments)
+    return text + "".join(attachments), attach

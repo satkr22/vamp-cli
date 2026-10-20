@@ -4,6 +4,7 @@ from typing import override
 from vamp_cli.tools.base import Tools, InputSchema
 from vamp_cli.tools.files import FileTools
 from vamp_cli.tools.execute_cmd import ExecuteCommandTool
+from vamp_cli.tools.registry import ToolRegistry
 
 
 class ListDirTool(Tools):
@@ -40,14 +41,19 @@ class ListDirTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         path = inputs["path"]
         max_depth = inputs.get("max_depth", 2)
+        
+        self.registry.emit_tool_output(self.name, path, "")
+        
         result = self.file_tools.list_dir(path, max_depth)
+        
         return json.dumps(result)
 
 
@@ -91,14 +97,18 @@ class ReadFileTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         path = inputs["path"]
         start = inputs.get("start")
         end = inputs.get("end")
+        
+        self.registry.emit_tool_output(self.name, path, "")
+        
         result = self.file_tools.read_file(path, start, end)
         return json.dumps(result)
 
@@ -150,14 +160,18 @@ class ReadManyFilesTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         paths = inputs["paths"]
         start = inputs.get("start")
         end = inputs.get("end")
+        
+        self.registry.emit_tool_output(self.name, "many files", "")
+        
         result = self.file_tools.read_many_files(paths, start, end)
         return json.dumps(result)
 
@@ -206,14 +220,16 @@ class WriteFileTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         path = inputs["path"]
         content = inputs["content"]
         overwrite = inputs.get("overwrite", False)
+        self.registry.emit_tool_output(self.name, path, "")
         result = self.file_tools.write_file(path, content, overwrite)
         return json.dumps(result)
 
@@ -265,14 +281,16 @@ class ApplySearchReplaceTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         file_path = inputs["file_path"]
         search = inputs["search"]
         replace = inputs["replace"]
+        self.registry.emit_tool_output(self.name, file_path, "")
         result = self.file_tools.apply_search_replace(file_path, search, replace)
         return json.dumps(result)
 
@@ -326,14 +344,16 @@ class FileSearchTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
         query = inputs["query"]
         path = inputs.get("path", ".")
         max_results = inputs.get("max_results", 100)
+        self.registry.emit_tool_output(self.name, query, "")
         result = self.file_tools.file_search(query, path, max_results)
         return json.dumps(result)
 
@@ -402,8 +422,9 @@ class RipgrepSearchTool(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, file_tools: FileTools):
+    def __init__(self, file_tools: FileTools, registry: ToolRegistry):
         self.file_tools = file_tools
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
@@ -412,6 +433,7 @@ class RipgrepSearchTool(Tools):
         is_regex = inputs.get("is_regex", False)
         file_pattern = inputs.get("file_pattern")
         max_matches = inputs.get("max_matches", 50)
+        self.registry.emit_tool_output(self.name, query, "")
         result = self.file_tools.ripgrep_search(
             query, path, is_regex, file_pattern, max_matches
         )
@@ -453,13 +475,15 @@ class ExecuteCommandToolDef(Tools):
         additionalProperties=False,
     )
 
-    def __init__(self, execute_command_tool: ExecuteCommandTool):
+    def __init__(self, execute_command_tool: ExecuteCommandTool, registry: ToolRegistry):
         self.execute_command_tool = execute_command_tool
+        self.registry = registry
 
     @override
     async def arun(self, **inputs) -> str:
         command = inputs["command"]
         cwd = inputs.get("cwd", ".")
+        self.registry.emit_tool_output(self.name, command, "")
         result = await self.execute_command_tool.execute_command(command, cwd)
         return json.dumps(result)
     
@@ -508,6 +532,9 @@ class SubmitPlanTool(Tools):
         required=["plan", "requires_execution"],
         additionalProperties=False,
     )
+    
+    def __init__(self,registry: ToolRegistry) -> None:
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
@@ -516,6 +543,7 @@ class SubmitPlanTool(Tools):
         # raise RuntimeError(
         #     "submit_plan is a control tool and must be intercepted before execution."
         # )
+        self.registry.emit_tool_output(self.name, "Plan Submitted", "")
         return json.dumps({"status": "Plan submitted."})
     
     
@@ -599,6 +627,9 @@ class WriteTodosTool(Tools):
         required=["todos"],
         additionalProperties=False,
     )
+    
+    def __init__(self,registry: ToolRegistry) -> None:
+        self.registry = registry
 
     @override
     def run(self, **inputs) -> str:
@@ -618,5 +649,6 @@ class WriteTodosTool(Tools):
                 raise ValueError(f"Duplicate todo id: {t['id']!r}")
             seen_ids.add(t["id"])
 
+        self.registry.emit_tool_output(self.name, "Changed todo status", "")
         # The tool node intercepts this payload and writes it into state["todo"].
         return json.dumps(todos)

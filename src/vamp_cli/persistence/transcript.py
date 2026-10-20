@@ -1,160 +1,117 @@
 """
-Render a chain as a human-readable transcript using prompt_toolkit.
+Render a chain as a human-readable transcript using Rich components.
 """
 
 from __future__ import annotations
 
-from prompt_toolkit import print_formatted_text
-from prompt_toolkit.formatted_text import FormattedText
+import sys
+
+from rich.console import Console
+console = Console(file=sys.__stdout__)
+
+from rich.panel import Panel
+from rich.text import Text
+from rich.markdown import Markdown
 
 from vamp_cli.persistence.loader import build_shadow_map
 
+console = Console()
 
 def _truncate(text: str, limit: int = 400) -> str:
     if len(text) <= limit:
         return text
-    return text[:limit] + f" ... [{len(text) - limit} chars truncated]"
+    return text[:limit] + f"  ... ({len(text) - limit} chars truncated)"
 
 
-def render_transcript(
-    chain: list[dict],
-    *,
-    max_content_chars: int = 400,
-    max_reasoning_chars: int = 240,
-    use_color: bool = True,
-) -> FormattedText:
-    """
-    Return the chain as prompt_toolkit formatted text.
+def print_transcript(chain: list[dict], *, header: str | None = None) -> None:
+    """Renders the execution history into styled terminal elements."""
+    if header:
+        console.rule(f"[bold cyan]{header}[/bold cyan]")
+    else:
+        console.rule("[bold cyan]Session Transcript[/bold cyan]")
 
-    Shadowed events are skipped; summary is shown in their place.
-    All styling is represented by prompt_toolkit style fragments rather
-    than raw ANSI escape sequences.
-    """
-    shadowed, compaction_by_uuid = build_shadow_map(chain)
-
-    # prompt_toolkit style names.
-    DIM = "gray"
-    BOLD_CYAN = "bold cyan"
-    BOLD_GREEN = "bold green"
-    GREEN = "green"
-    YELLOW = "yellow"
-    RED = "red"
-
-    out: list[tuple[str, str]] = []
-
-    def add(text: str, style: str = "") -> None:
-        if use_color and style:
-            out.append((style, text))
-        else:
-            out.append(("", text))
-
-    pending_tool_calls: dict[str, dict] = {}
+    shadowed, _ = build_shadow_map(chain)
 
     for ev in chain:
         u = ev.get("uuid")
         t = ev.get("type")
         d = ev.get("data") or {}
 
-        if u in shadowed:
-            continue
-
-        if t in ("session_start", "session_end"):
+        if u in shadowed or t in ("session_start", "session_end"):
             continue
 
         if t == "mode_switch":
-            add(
-                f"-- mode: {d.get('from')} -> {d.get('to')} --",
-                DIM,
+            console.print(
+                f"  [dim italic]Mode switched:[/dim italic] [magenta]{d.get('from')}[/magenta] [dim]→[/dim] [bold magenta]{d.get('to')}[/bold magenta]"
             )
-            add("\n")
-            continue
 
-        if t == "compaction":
+        elif t == "compaction":
             summary = (d.get("summary") or "").strip()
-            add(
-                f"-- [compacted {d.get('event_count', '?')} messages] --",
-                YELLOW,
-            )
-            add("\n")
+            panel_text = Text()
+            panel_text.append(f"Compacted {d.get('event_count', '?')} turns to save context\n", style="bold yellow")
             if summary:
-                add("   " + summary.replace("\n", "\n   "), DIM)
-                add("\n")
-            continue
+                panel_text.append(summary, style="dim")
+            console.print(Panel(panel_text, border_style="yellow", expand=False))
 
-        if t == "user_message":
-            content = d.get("content", "")
-            add("\n")
-            add("You:", BOLD_CYAN)
-            add("\n")
-            add(content)
-            add("\n")
-            continue
+        elif t == "user_message":
+            text:str = d.get("content", "")
+            
+            before, _, _ = text.partition("--- FILE:")
+            
+            console.print(
+                Panel(
+                    before,
+                    title="[bold cyan]You[/bold cyan]",
+                    title_align="left",
+                    border_style="cyan",
+                    padding=(0, 1),
+                )
+            )
 
-        if t == "assistant_message":
+        elif t == "assistant_message":
             reasoning = d.get("reasoning_content") or ""
             content = d.get("content") or ""
             tool_calls = d.get("tool_calls") or []
 
             if reasoning:
-                add(
-                    "  (thinking) " + _truncate(reasoning, max_reasoning_chars),
-                    DIM,
+                console.print(
+                    Panel(
+                        Text(_truncate(reasoning, 240), style="italic dim"),
+                        title="[dim]Thought Process[/dim]",
+                        title_align="left",
+                        border_style="dim",
+                        padding=(0, 1),
+                    )
                 )
-                add("\n")
 
             if content:
-                add("\n")
-                add("Agent:", BOLD_GREEN)
-                add("\n")
-                add(content)
-                add("\n")
+                console.print(
+                    Panel(
+                        Markdown(content),
+                        title="[bold green]Agent[/bold green]",
+                        title_align="left",
+                        border_style="green",
+                        padding=(0, 1),
+                    )
+                )
 
             for tc in tool_calls:
-                pending_tool_calls[tc.get("id") or ""] = tc
                 name = tc.get("name") or "?"
-                add(f"  >> {name}(...)", DIM)
-                add("\n")
-            continue
+                args = tc.get("args") or tc.get("arguments") or ""
+                console.print(f"  [dim cyan] Tool Execution:[/dim cyan] [bold yellow]{name}[/bold yellow]([dim]{_truncate(str(args), 80)}[/dim])")
 
-        if t == "interrupt_request":
-            kind = d.get("kind") or "?"
-            add(f"-- interrupt: {kind} requested --", YELLOW)
-            add("\n")
-            continue
+        elif t == "interrupt_request":
+            kind = d.get("kind") or "Action"
+            console.print(f"  [bold yellow]⚠ Interrupt Request:[/bold yellow] [dim]{kind}[/dim]")
 
-        if t == "interrupt_response":
-            verdict = "approved" if d.get("approved") else "denied"
-            add(
-                f"-- interrupt: {d.get('kind')} {verdict} --",
-                GREEN if d.get("approved") else RED,
-            )
-            add("\n")
-            continue
+        elif t == "interrupt_response":
+            approved = d.get("approved")
+            status = "[green] Approved[/green]" if approved else "[red] Denied[/red]"
+            console.print(f"  [bold]Interrupt Decision:[/bold] {status} {d.get('reason') if not approved else ''}")
 
-        if t == "fork":
-            add(
-                f"-- fork: {d.get('reason', '')} -> thread {d.get('thread_id')} --",
-                DIM,
-            )
-            add("\n")
-            continue
+        elif t == "fork":
+            console.print(f"  [dim] Forked at {d.get('fork_point_uuid', '')[:8]} -> Thread: {d.get('thread_id')}[/dim]")
 
-    # Remove trailing newlines
-    while out and out[0][1].strip() == "":
-        out.pop(0)
-    while out and out[-1][1].strip() == "":
-        out.pop()
-
-    return FormattedText(out)
+    console.rule("[dim]End of History[/dim]")
 
 
-def print_transcript(chain: list[dict], *, header: str | None = None) -> None:
-    """wrapper for main.py."""
-    if header:
-        print_formatted_text(FormattedText([("", f"\n{header}\n")]))
-
-    body = render_transcript(chain)
-    if body:
-        print_formatted_text(body)
-    else:
-        print_formatted_text(FormattedText([("", "(no prior messages)")]))

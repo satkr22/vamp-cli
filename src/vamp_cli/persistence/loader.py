@@ -33,6 +33,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 
+from vamp_cli.agent.instructions import TODO_INSTRUCTIONS
 
 # Chain loading
 def load_chain(
@@ -116,6 +117,8 @@ def derive_display_state(events: list[dict]) -> dict[str, Any]:
         d = ev.get("data") or {}
         if t == "mode_switch":
             selected_mode = d.get("to", selected_mode)
+            executed_mode = d.get("to", executed_mode)
+            is_session_started = True
         elif t == "user_message":
             executed_mode = d.get("mode", executed_mode)
             is_session_started = True
@@ -171,6 +174,9 @@ def reconstruct_agent_state(
             coder_msgs.append(SystemMessage(
                 content=system_prompts["coder"], id="coder_system_prompt",
             ))
+            coder_msgs.append(
+                SystemMessage(content=TODO_INSTRUCTIONS)
+            )
         if system_prompts.get("planner"):
             planner_msgs.append(SystemMessage(
                 content=system_prompts["planner"], id="planner_system_prompt",
