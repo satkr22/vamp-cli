@@ -171,6 +171,7 @@ def print_banner(session_id: str, is_resume: bool, coder_model: str, planner_mod
         "[cyan]/fork[/cyan] Rewind history  "
         "[cyan]/branches[/cyan] Switch tips  "
         "[cyan]/compact[/cyan] Compress tokens  "
+        "[cyan]/config[/cyan] Edit config  "
         "[cyan]/exit[/cyan] Quit"
     )
 
