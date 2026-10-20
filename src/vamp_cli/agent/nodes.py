@@ -36,24 +36,24 @@ def create_planner_node(model: Runnable):
             None
         )
         
-        if response.tool_calls:
-            print_formatted_text(
-                FormattedText([(
-                    "class:dimmed",
-                    "\n\n[planner] calling:"
-                )]),
-                style=_dim_style,
-                end="\n"
-            )
-            for tc in response.tool_calls:
-                print_formatted_text(
-                    FormattedText([(
-                        "class:dimmed", 
-                        f">> {str(tc['name'])}({str(tc['args'])})"
-                    )]),
-                    style=_dim_style,
-                    end="\n"
-                )
+        # if response.tool_calls:
+        #     print_formatted_text(
+        #         FormattedText([(
+        #             "class:dimmed",
+        #             "\n\n[planner] calling:"
+        #         )]),
+        #         style=_dim_style,
+        #         end="\n"
+        #     )
+        #     for tc in response.tool_calls:
+        #         print_formatted_text(
+        #             FormattedText([(
+        #                 "class:dimmed", 
+        #                 f">> {str(tc['name'])}({str(tc['args'])})"
+        #             )]),
+        #             style=_dim_style,
+        #             end="\n"
+        #         )
                 # print("Tool: ", tc['name'])
                 # print("Arguments: ", tc['args'])
         
@@ -119,24 +119,24 @@ def create_agent_node(model: Runnable):
         
         # print("\n\nCODER------AI-RESPONSE:\n.\n.\n", response, "\n\n")
         
-        if response.tool_calls:
-            print_formatted_text(
-                FormattedText([(
-                    "class:dimmed",
-                    "\n\n[coder] calling:"
-                )]),
-                style=_dim_style,
-                end="\n"
-            )
-            for tc in response.tool_calls:
-                print_formatted_text(
-                    FormattedText([(
-                        "class:dimmed", 
-                        f">> {str(tc['name'])}({str(tc['args'])})"
-                    )]),
-                    style=_dim_style,
-                    end="\n"
-                )
+        # if response.tool_calls:
+        #     print_formatted_text(
+        #         FormattedText([(
+        #             "class:dimmed",
+        #             "\n\n[coder] calling:"
+        #         )]),
+        #         style=_dim_style,
+        #         end="\n"
+        #     )
+        #     for tc in response.tool_calls:
+        #         print_formatted_text(
+        #             FormattedText([(
+        #                 "class:dimmed", 
+        #                 f">> {str(tc['name'])}({str(tc['args'])})"
+        #             )]),
+        #             style=_dim_style,
+        #             end="\n"
+        #         )
         
         return {
             "coder_messages": [response],

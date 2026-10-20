@@ -1,5 +1,5 @@
 # registry.py
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from vamp_cli.tools.base import Tools
 
 
@@ -13,10 +13,23 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, Tools] = {}
+        self._ui_callback: Optional[Callable[[str, str, str], None]] = None
+        
+    def set_ui_callback(self, callback: Callable[[str, str, str], None]):
+        """Attach the Live UI updater function."""
+        self._ui_callback = callback
 
-    # ------------------------------------------------------------------
+    def clear_ui_callback(self):
+        self._ui_callback = None
+
+    def emit_tool_output(self, tool_name: str, args: str, output: str):
+        """Tools will call this to print to the UI."""
+        if self._ui_callback:
+            self._ui_callback(tool_name, args, output)
+
+
+
     # Registration
-    # ------------------------------------------------------------------
     def register(self, tool: Tools) -> None:
         """Register a single tool. Raises if the name is already taken."""
         if not getattr(tool, "name", None):
@@ -40,9 +53,8 @@ class ToolRegistry:
         """Remove all registered tools."""
         self._tools.clear()
 
-    # ------------------------------------------------------------------
+ 
     # Lookup
-    # ------------------------------------------------------------------
     def get_tool(self, name: str) -> Dict[str, Tools]:
         """
         Return a single tool as `{name: tool_object}`.
@@ -109,9 +121,7 @@ class ToolRegistry:
         """Ready-to-bind OpenAI-format tool list."""
         return [t.to_openai_tool() for t in self.get_tool_list(names)]
 
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
+
     def has_tool(self, name: str) -> bool:
         """True if a tool with the given name is registered."""
         return name in self._tools

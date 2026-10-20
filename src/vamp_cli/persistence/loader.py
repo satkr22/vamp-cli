@@ -117,6 +117,8 @@ def derive_display_state(events: list[dict]) -> dict[str, Any]:
         d = ev.get("data") or {}
         if t == "mode_switch":
             selected_mode = d.get("to", selected_mode)
+            executed_mode = d.get("to", executed_mode)
+            is_session_started = True
         elif t == "user_message":
             executed_mode = d.get("mode", executed_mode)
             is_session_started = True

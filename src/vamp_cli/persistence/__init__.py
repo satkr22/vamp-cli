@@ -12,7 +12,7 @@ from vamp_cli.persistence.compaction import (
     compact_session, plan_compaction_range,
     build_summary_transcript, DEFAULT_KEEP_TURNS, auto_compact_if_needed, DEFAULT_COMPACT_THRESHOLD
 )
-from vamp_cli.persistence.transcript import render_transcript, print_transcript
+from vamp_cli.persistence.transcript import print_transcript
 
 __all__ = [
     "EventLog", "EventEmitter", "uuid7", "iter_events",
@@ -23,7 +23,7 @@ __all__ = [
     "fork_at_event",
     "compact_session", "plan_compaction_range",
     "build_summary_transcript", "DEFAULT_KEEP_TURNS",
-    "render_transcript", "print_transcript",
+    "print_transcript",
     "auto_compact_if_needed", "DEFAULT_COMPACT_THRESHOLD",
     "_repair_orphaned_tool_calls"
 ]

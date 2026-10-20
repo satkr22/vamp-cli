@@ -18,12 +18,14 @@ class Token_Tracker:
         """Turn ended (graph reached END with no pending resume)."""
         if not self.open:
             return
-        print("Token Usage (this turn):")
-        print(f"  Input : {self.usage['input_tokens']}")
-        print(f"  Output: {self.usage['output_tokens']}")
-        print(f"  Total : {self.usage['total_tokens']}")
-        print()
+        # print("Token Usage (this turn):")
+        # print(f"  Input : {self.usage['input_tokens']}")
+        # print(f"  Output: {self.usage['output_tokens']}")
+        # print(f"  Total : {self.usage['total_tokens']}")
+        # print()
         self.open = False
+        
+        return self.usage
 
     def abort(self):
         """User cancelled — drop the accumulator without printing."""

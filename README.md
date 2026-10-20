@@ -8,7 +8,7 @@ The agent can inspect and edit files, search a codebase, run commands, maintain 
 
 ## Highlights
 
-- Interactive terminal UI launched with the `vamp` command.
+- Interactive terminal UI launched with the `vamp` command, powered by **[Rich](https://github.com/Textualize/rich)** for beautiful formatting, colors, and progress indicators.
 - Two operating modes:
   - **Normal mode**: work directly with the coding agent.
   - **Plan mode**: have the planner produce a plan and approve it before implementation.
@@ -23,6 +23,18 @@ The agent can inspect and edit files, search a codebase, run commands, maintain 
 - **Forking**: rewind to any past user message and branch off a new conversation path without deleting the original.
 - **Branch switching**: view and switch between conversation branches within a session.
 - **Conversation compaction**: automatically or manually summarize early turns to stay within model context limits.
+
+## Demo
+
+### Interactive Terminal Experience
+
+Below is a demonstration of the VAMP-CLI interface in action. The UI utilizes the **Rich** library to provide syntax highlighting, styled tables, and clear visual feedback during agent operations.
+
+![VAMP-CLI Demo GIF](./assets/demo.gif)
+
+### Interface Screenshot
+
+![VAMP-CLI Interface Screenshot](./assets/screenshot.png)
 
 ## Requirements
 
@@ -43,6 +55,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 ```
+
 Package:
 
 ```bash
