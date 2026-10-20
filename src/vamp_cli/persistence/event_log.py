@@ -147,6 +147,7 @@ class EventLog:
 
         log._file = open(path, "a", encoding="utf-8", buffering=1)
         log._writer_task = asyncio.create_task(log._writer_loop())
+
         return log
 
     

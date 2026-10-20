@@ -62,7 +62,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, SystemMessage
 
-__VERSION__ = "0.1.7"
+__VERSION__ = "0.1.8"
 PROJECT_DIR = str(Path.cwd())
 console = Console()
 
@@ -397,6 +397,28 @@ async def main(resume_id: str | None = None):
             "configurable": {"thread_id": THREAD_ID, "emitter": emitter},
             "recursion_limit": 200,
         }
+        
+        
+        # fresh session
+        if not is_resume:
+            await log.append("session_start", {
+                "workspace_root": PROJECT_DIR,
+                "models": {
+                    "coder":   getattr(coder_profile.model,   "model_name", None)
+                                or getattr(coder_profile.model,   "model", None),
+                    "planner": getattr(planner_profile.model, "model_name", None)
+                                or getattr(planner_profile.model, "model", None),
+                },
+                "roles": {"coder": AgentRole.CODER.value, "planner": AgentRole.PLANNER.value},
+                "tools": tool_registry.list_tool_names(),
+                "checkpoint_thread_id": THREAD_ID,   # step 4 will make this per-session
+                "checkpoint_backend":   "sqlite",
+                "system_prompts": {
+                    "coder":   coder_profile.system_prompt,
+                    "planner": planner_profile.system_prompt,
+                },
+            })
+        
 
         selected_mode: str = "normal"
         executed_mode: str = "normal"

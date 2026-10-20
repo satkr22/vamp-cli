@@ -463,6 +463,9 @@ def _parse_session_file(entry: os.DirEntry) -> dict[str, Any] | None:
                 if lines_checked >= 100:
                     break
 
+            # Reset file position so the tail scan can seek correctly
+            f.seek(0)
+
             # 2. Tail scan: jump straight to the end for the last timestamp
             last_ts = _extract_tail_timestamp(f, size_bytes)
 
