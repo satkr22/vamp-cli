@@ -6,7 +6,7 @@ from rich.table import Table
 from vamp_cli.persistence.loader import list_sessions
 from vamp_cli.boot.main import main
 
-__VERSION__ = "0.1.10"
+__VERSION__ = "0.1.11"
 PROJECT_DIR = str(Path.cwd())
 console = Console() 
 
