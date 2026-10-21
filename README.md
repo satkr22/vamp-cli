@@ -4,6 +4,9 @@ VAMP-CLI is an interactive coding agent for working in a local repository. It co
 
 The agent can inspect and edit files, search a codebase, run commands, maintain a task list, and ask for confirmation before executing potentially dangerous operations.
 
+For implementation-level component responsibilities, runtime flow, agent graph, workspace/sandbox boundary, and session persistence diagrams, see the [Architecture Guide](docs/architecture.md).
+
+
 > **Status:** VAMP-CLI is an early-stage project. The interfaces and default model configuration may change.
 
 ## Highlights
@@ -148,6 +151,77 @@ Select Mode [plan/normal]: plan
 Add tests for the configuration loader, then implement the changes after I approve the plan.
 ```
 
+
+## High-level system overview
+
+VAMP-CLI runs as a terminal application on the host. The agent uses configured language models to reason about a task, and a tool layer reads or edits the current repository. Shell commands run in a Docker container with that repository mounted as the workspace. Session history and resumable agent state are stored separately as a JSONL event log and a SQLite checkpoint.
+
+```mermaid
+flowchart LR
+    User[User] --> CLI[Terminal CLI]
+    CLI --> Agent[Planner or coder agent]
+    Agent --> Models[Configured language model]
+    Agent --> Tools[Tool registry]
+    Tools --> Files[Workspace file tools]
+    Tools --> Sandbox[Docker command sandbox]
+    Files --> Repo[Current repository]
+    Sandbox --> Repo
+    Agent --> Events[JSONL session history]
+    Agent --> State[SQLite agent checkpoint]
+```
+
+See the [Architecture Guide](docs/architecture.md) for component responsibilities, detailed agent flow, and persistence behavior.
+
+## How it works
+
+1. `vamp_cli.cli` creates a workspace, ignore matcher, tool registry, model router, EventLog, and Docker sandbox.
+2. The selected planner or coder profile supplies a system prompt and permitted tools.
+3. LangGraph routes model output through tool classification, approval, and execution nodes.
+4. File tools operate within the current workspace; terminal commands execute in the mounted Docker container.
+5. An `EventEmitter` translates LangChain `astream_events` v2 frames into durable JSONL events in real time — `on_chat_model_start/stream/end` → `assistant_message`, `on_tool_start/end/error` → `tool_result`.
+6. The session retains graph state via LangGraph's SQLite checkpointer so follow-up prompts can continue the current task.
+7. On resume, the event log and checkpointer are rehydrated together — the event log provides the human-readable chain and fallback state, while the checkpointer is the authoritative source for the LangGraph agent state.
+
+The main package areas are:
+
+```text
+src/vamp_cli/
+├── agent/       LangGraph state, nodes, routing, and runtime profiles
+├── config/      YAML loading, validation, model/profile configuration
+├── llm/         LiteLLM-backed model routing, adapters, fallbacks, usage
+├── prompts/     Planner and coder system prompts
+├── sandbox/     Docker lifecycle and command execution
+├── tools/       File, search, diagnostic, todo, and command tools
+├── workspace/   Workspace path-safety enforcement
+├── persistence/ Session event log, emitter, loader, fork, compaction, transcript
+└── boot/        Bootstrap and interactive CLI runtime
+```
+
+Agent FLow:
+
+```mermaid
+flowchart TD
+    Start((Start)) --> Mode{Mode}
+    Mode -->|Normal| Coder[Coder]
+    Mode -->|Plan| Planner[Planner]
+    Coder --> Calls{Tool calls?}
+    Calls -->|No| End((End))
+    Calls -->|Yes| Dangerous{Dangerous command?}
+    Dangerous -->|No| RunTools[Run tools]
+    Dangerous -->|Yes| Approval{Ask user}
+    Approval -->|Approve| RunTools
+    Approval -->|Deny| Coder
+    RunTools --> Coder
+    Planner --> Plan{Plan submitted?}
+    Plan -->|No: more planner tools| RunPlanTools[Run planner tools]
+    RunPlanTools --> Planner
+    Plan -->|Yes| PlanApproval{User approves plan?}
+    PlanApproval -->|Yes| Coder
+    PlanApproval -->|No| End
+```
+
+For implementation-level component responsibilities, runtime flow, agent graph, workspace/sandbox boundary, and session persistence diagrams, see the [Architecture Guide](docs/architecture.md).
+
 ## Session Persistence & Resumption
 
 VAMP-CLI automatically saves every interaction so you can pick up where you left off.
@@ -222,30 +296,6 @@ A progress line is printed:
 [auto-compact] done: 24 events, ~9,500 → ~600 tokens
 ```
 
-## How it works
-
-1. `vamp_cli.main` creates a workspace, ignore matcher, tool registry, model router, EventLog, and Docker sandbox.
-2. The selected planner or coder profile supplies a system prompt and permitted tools.
-3. LangGraph routes model output through tool classification, approval, and execution nodes.
-4. File tools operate within the current workspace; terminal commands execute in the mounted Docker container.
-5. An `EventEmitter` translates LangChain `astream_events` v2 frames into durable JSONL events in real time — `on_chat_model_start/stream/end` → `assistant_message`, `on_tool_start/end/error` → `tool_result`.
-6. The session retains graph state via LangGraph's SQLite checkpointer so follow-up prompts can continue the current task.
-7. On resume, the event log and checkpointer are rehydrated together — the event log provides the human-readable chain and fallback state, while the checkpointer is the authoritative source for the LangGraph agent state.
-
-The main package areas are:
-
-```text
-src/vamp_cli/
-├── agent/       LangGraph state, nodes, routing, and runtime profiles
-├── config/      YAML loading, validation, model/profile configuration
-├── llm/         LiteLLM-backed model routing, adapters, fallbacks, usage
-├── prompts/     Planner and coder system prompts
-├── sandbox/     Docker lifecycle and command execution
-├── tools/       File, search, diagnostic, todo, and command tools
-├── workspace/   Workspace path-safety enforcement
-├── persistence/ Session event log, emitter, loader, fork, compaction, transcript
-└── main.py      Interactive CLI entry point
-```
 
 ### Persistence Module Details
 

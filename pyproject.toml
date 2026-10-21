@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vamp-cli"
-version = "0.1.4"
+version = "0.1.11"
 authors = [
   { name = "Satyam Kumar", email = "satkr2208@gmail.com" }
 ]
@@ -48,7 +48,7 @@ vamp_cli = ["*.md", "**/*.md", "**/*.yaml"]
 
 
 [project.scripts]
-vamp = "vamp_cli.main:start"
+vamp = "vamp_cli.cli:start"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

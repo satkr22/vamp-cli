@@ -224,3 +224,7 @@ __marimo__/
 __pycache__
 .pytest_cache
 *.txt
+*.log
+logs
+dist
+*.egg-info
