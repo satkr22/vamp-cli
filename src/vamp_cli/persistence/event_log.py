@@ -27,8 +27,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-
 # uuid7 - time-sortable, canonical-string form
+# 128 bits
+# ┌------------------------------┬------┬------------┬-------┬-------------------------┐
+# │        timestamp (ms)        │ ver  │   rand_a   │variant│        rand_b           │
+# │          48 bits             │4 bit │  12 bits   │2 bit  │          62 bits        │
+# └------------------------------┴------┴------------┴-------┴-------------------------┘
+
 def uuid7() -> str:
     ms = int(time.time() * 1000) & ((1 << 48) - 1)
     rand_a = int.from_bytes(os.urandom(2), "big") & 0x0FFF
@@ -267,7 +272,8 @@ class EventLog:
 
 # helpers
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    # return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
 def _scan_leaf_uuid(path: Path) -> str | None:
