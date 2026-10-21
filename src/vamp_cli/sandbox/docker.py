@@ -3,7 +3,8 @@ import uuid
 import time
 import asyncio
 import platform
-from pathlib import Path
+import posixpath
+from pathlib import PurePosixPath
 import subprocess
 from vamp_cli.sandbox.base import Sandbox
 from vamp_cli.sandbox.config import SandboxConfig
@@ -18,7 +19,7 @@ class DockerSandbox(Sandbox):
         workspace: Workspace,
         config: SandboxConfig,
     ):
-        self.workspace = str(Path(workspace.root).resolve())
+        self.workspace = str(workspace.root)
         self.config = config
         self.container_name = f"vamp-sandbox-{uuid.uuid4().hex[:8]}"
 
@@ -44,10 +45,10 @@ class DockerSandbox(Sandbox):
             str(self.config.pids_limit),
 
             "-v",
-            f"{self.workspace}:{self.workspace}",
+            f"{self.workspace}:/workspace",
 
             "-w",
-            self.workspace,
+            "/workspace",
         ]
         
         # Fix Linux/WSL file ownership issues
@@ -94,14 +95,12 @@ class DockerSandbox(Sandbox):
     async def execute(
         self,
         command: str,
-        cwd: str | None = None,
+        cwd: str = "/workspace",
         timeout: int = 30,
         max_output_chars: int = 12000
     ) -> CommandResult:
 
-        if cwd is None:
-            cwd = self.workspace
-        safe_cwd = _resolve_cwd(cwd, self.workspace)
+        safe_cwd = _resolve_cwd(cwd) 
         
         proc = await asyncio.create_subprocess_exec(
             "docker", "exec", "-w", safe_cwd,
@@ -194,29 +193,27 @@ class DockerSandbox(Sandbox):
         #     text=True,
         # )
         
-def _resolve_cwd(cwd: str, workspace_root: str) -> str:
-    """Resolve a working directory inside the container.
+def _resolve_cwd(cwd: str) -> str:
 
-    If *cwd* is an absolute path, it is returned as-is (the bind-mount
-    guarantees the same path exists inside the container).  If it is
-    relative, it is treated as relative to *workspace_root*.
-    """
-    p = Path(cwd)
-    if p.is_absolute():
-        # Absolute paths are used directly because the host workspace is
-        # bind-mounted at its real path inside the container.
-        resolved = p.resolve()
-        host_root = Path(workspace_root).resolve()
-        if resolved != host_root and host_root not in resolved.parents:
-            raise ValueError("cwd escapes workspace")
-        return str(resolved)
+    if cwd.startswith("/"):
+        raise ValueError(
+            "cwd must be relative to workspace"
+        )
 
-    # Relative path – treat as relative to workspace root.
-    resolved = (Path(workspace_root) / cwd).resolve()
-    host_root = Path(workspace_root).resolve()
-    if resolved != host_root and host_root not in resolved.parents:
-        raise ValueError("cwd escapes workspace")
-    return str(resolved)
+    root = PurePosixPath("/workspace")
+
+    normalized = PurePosixPath(
+        posixpath.normpath(
+            str(root / cwd)
+        )
+    )
+
+    if normalized != root and root not in normalized.parents:
+        raise ValueError(
+            "cwd escapes workspace"
+        )
+
+    return str(normalized)
 
 
 async def ensure_sandbox_image_exists(image_tag: str = SandboxConfig.image):
