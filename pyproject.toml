@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vamp-cli"
-version = "0.1.9"
+version = "0.1.10"
 authors = [
   { name = "Satyam Kumar", email = "satkr2208@gmail.com" }
 ]
