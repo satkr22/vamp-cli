@@ -224,7 +224,7 @@ A progress line is printed:
 
 ## How it works
 
-1. `vamp_cli.main` creates a workspace, ignore matcher, tool registry, model router, EventLog, and Docker sandbox.
+1. `vamp_cli.cli` creates a workspace, ignore matcher, tool registry, model router, EventLog, and Docker sandbox.
 2. The selected planner or coder profile supplies a system prompt and permitted tools.
 3. LangGraph routes model output through tool classification, approval, and execution nodes.
 4. File tools operate within the current workspace; terminal commands execute in the mounted Docker container.
@@ -244,8 +244,10 @@ src/vamp_cli/
 ├── tools/       File, search, diagnostic, todo, and command tools
 ├── workspace/   Workspace path-safety enforcement
 ├── persistence/ Session event log, emitter, loader, fork, compaction, transcript
-└── main.py      Interactive CLI entry point
+└── boot/        Bootstrap and interactive CLI runtime
 ```
+
+For implementation-level component responsibilities, runtime flow, agent graph, workspace/sandbox boundary, and session persistence diagrams, see the [Architecture Guide](docs/architecture.md).
 
 ### Persistence Module Details
 
