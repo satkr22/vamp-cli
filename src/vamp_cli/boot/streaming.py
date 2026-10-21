@@ -72,7 +72,7 @@ async def streaming(
 
     # 3. Live Context Manager: Takes over rendering to update in-place
     try:
-        with Live(generate_layout(), console=console, refresh_per_second=60, vertical_overflow="visible") as live:
+        with Live(generate_layout(), console=console, refresh_per_second=15, vertical_overflow="visible") as live:
             
             # UI CALLBACK
             def ui_tool_callback(tool_name: str, args: str,  output_text: str):
