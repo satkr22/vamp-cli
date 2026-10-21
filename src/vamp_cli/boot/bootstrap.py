@@ -31,7 +31,7 @@ async def build_startup(project_dir: str):
         # d_sandbox.start()
         sandbox = await d_sandbox.create(workspace)
     except Exception as e:
-        print(f"\n\nDocker not running. Please start docker.\n\n")
+        print(f"\n\nDocker Container Startup Failed.\n{e}\n\n")
         sys.exit(0)
 
     terminal = Terminal(sandbox=sandbox)

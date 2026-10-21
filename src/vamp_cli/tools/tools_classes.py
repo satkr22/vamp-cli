@@ -444,8 +444,10 @@ class ExecuteCommandToolDef(Tools):
     name = "execute_command"
     parallel_safe = False
     description = (
-        "Execute a shell command in the sandboxed terminal and return the command's execution result."
-
+        "Execute a shell command in the LINUX sandboxed terminal and return the command's execution result."
+        
+        "NOTE: The workspace is /workspace. Use POSIX shell commands and /workspace/... paths or relative paths."
+        
         "Use this tool when the requested operation is best performed by an operating-system shell command or CLI program, such as running a build, test suite, formatter, package command, version-control command, script, compiler, or other executable."
 
         "The command is executed with cwd as its working directory."
