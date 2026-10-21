@@ -48,7 +48,7 @@ flowchart LR
 
 ## Startup and configuration
 
-The installed `vamp` script is declared in `pyproject.toml` as `vamp_cli.cli:start`. `cli.start` uses the current working directory as the project workspace. It handles `--list`, `--resume`/`-r`, and `--previous`/`-p`; otherwise it starts a new session.
+The installed `vamp` script is declared in `pyproject.toml` as `vamp_cli.cli:start`. `cli.start` uses the current working directory as the project workspace. It handles `--list`/`-l`, `--resume`/`-r`, and `--previous`/`-p`; otherwise it starts a new session.
 
 `boot.main.main` calls `boot.bootstrap.create_runtime`. Bootstrap loads and validates `~/.vamp/config.yaml`, creates a `Workspace` and ignore matcher, starts a `DockerSandbox`, instantiates tool implementations, and registers them in `ToolRegistry`. `AgentRuntime` resolves coder and planner profiles from configuration. Each profile combines its configured model, permitted tool schemas, system prompt, and context window. `ModelRouter` builds the configured chat runnable and its fallback chain.
 
