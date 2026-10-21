@@ -60,31 +60,28 @@ The model API key is looked up from the environment variable named by `api_key_e
 
 ```mermaid
 flowchart TD
-    Start((START)) --> Mode{mode}
-    Mode -->|normal| Coder[Coder model]
-    Mode -->|plan| Planner[Planner model]
-    Coder --> HasCoderTools{tool calls and iteration below 15?}
-    HasCoderTools -->|no| End((END))
-    HasCoderTools -->|yes| CClass[Classify dangerous calls]
-    Planner --> HasPlannerTools{tool calls and iteration below 15?}
-    HasPlannerTools -->|no| End
-    HasPlannerTools -->|yes| PClass[Classify dangerous calls]
-    CClass --> Approve[Tool approval gate]
-    PClass --> Approve
-    Approve -->|dangerous calls| HumanTool{Human approval interrupt}
-    Approve -->|all safe| Execute[Execute approved tools]
-    HumanTool --> Execute
-    Execute --> Channel{origin channel / submit_plan?}
-    Channel -->|coder| Coder
-    Channel -->|planner tools remain| Planner
-    Channel -->|submit_plan| PlanGate{Plan approval interrupt}
-    PlanGate -->|approved| Coder
-    PlanGate -->|denied / no execution| End
+    Start((Start)) --> Mode{Mode}
+    Mode -->|Normal| Coder[Coder]
+    Mode -->|Plan| Planner[Planner]
+    Coder --> Calls{Tool calls?}
+    Calls -->|No| End((End))
+    Calls -->|Yes| Dangerous{Dangerous command?}
+    Dangerous -->|No| RunTools[Run tools]
+    Dangerous -->|Yes| Approval{Ask user}
+    Approval -->|Approve| RunTools
+    Approval -->|Deny| Coder
+    RunTools --> Coder
+    Planner --> Plan{Plan submitted?}
+    Plan -->|No: more planner tools| RunPlanTools[Run planner tools]
+    RunPlanTools --> Planner
+    Plan -->|Yes| PlanApproval{User approves plan?}
+    PlanApproval -->|Yes| Coder
+    PlanApproval -->|No| End
 ```
 
-The planner can call `submit_plan`; after planner tool execution this routes to a plan approval interrupt. Approval allows the coder to proceed with the plan. For tool calls, `agent.nodes` classifies a narrow set of command substrings as dangerous (for example `rm `, `curl `, `wget `, `pip install `, `shutdown`, `dd `) when the tool is an execute-like tool. Safe calls are auto-approved; dangerous calls pause the graph until the user responds. Exact detection behavior is implemented in `_is_dangerous` and is not a general command sandbox policy.
+The planner can call `submit_plan`; after planner tool execution this routes to a plan approval interrupt. Approval allows the coder to proceed with the plan. For tool calls, `agent.nodes` classifies a narrow set of command substrings as dangerous (for example `rm`, `curl`, `wget`, `pip install`, `shutdown`, `dd`) when the tool is an execute-like tool. Safe calls are auto-approved; dangerous calls pause the graph until the user responds. Exact detection behavior is implemented in `_is_dangerous` and is not a general command sandbox policy.
 
-The graph stops after 15 node iterations. `boot.streaming.streaming` consumes LangGraph v2 events, updates Rich terminal output, accumulates usage, and sends each event to `EventEmitter`. The emitter turns model and tool lifecycle events into session events. Tool execution is dispatched through `ToolRegistry`; file tools receive the workspace abstraction, while command execution delegates to the Docker-backed terminal.
+The graph stops after 15 node iterations for each turn. `boot.streaming.streaming` consumes LangGraph v2 events, updates Rich terminal output, accumulates usage, and sends each event to `EventEmitter`. The emitter turns model and tool lifecycle events into session events. Tool execution is dispatched through `ToolRegistry`; file tools receive the workspace abstraction, while command execution delegates to the Docker-backed terminal.
 
 ## Workspace and sandbox boundary
 
@@ -109,23 +106,19 @@ Forking creates a new path from a selected event and seeds a new graph thread; i
 
 ```mermaid
 flowchart LR
-    subgraph Event log: sessions/<id>.jsonl
+    subgraph EventLog["Event log: sessions/session-id.jsonl"]
       A[session_start] --> B[user_message]
-      B --> C[assistant/tool events]
+      B --> C[assistant and tool events]
       C --> D[active branch tip]
-      C --> E[fork event from earlier parent]
+      C --> E[fork from earlier event]
       E --> F[alternate branch events]
     end
-    Head[<id>.head] -. active leaf .-> D
+    Head[session-id.head] -. active leaf .-> D
     Head -. repointed on branch switch .-> F
-    GraphState[checkpoints/<id>.sqlite] <-->|checkpoint reads and writes| Runtime[LangGraph runtime]
+    GraphState[checkpoints/session-id.sqlite] <-->|checkpoint reads and writes| Runtime[LangGraph runtime]
     Runtime -->|resume / reconstruct| Events[Event chain]
 ```
 
 ## Packaging and development entry points
 
 `pyproject.toml` uses setuptools with a `src/` layout, requires Python 3.11+, packages Markdown/YAML prompt and configuration assets, and declares the `vamp` console command. Runtime dependencies include LangGraph/LangChain, LiteLLM integration, SQLite checkpoint support, Pydantic, Rich, prompt-toolkit, and YAML/path handling libraries. Pytest is configured to discover `tests/`.
-
-## Source of truth and maintenance
-
-This document follows the checked-in implementation. In particular, the startup path is `vamp_cli.cli:start` → `vamp_cli.boot.main.main`, rather than a `vamp_cli.main` module. When runtime topology, event types, storage files, or tool approval rules change, update the diagrams and the corresponding sections here. The README has the user-facing overview and links to this architecture reference.
