@@ -154,6 +154,37 @@ def detect_pending_interrupt(events: list[dict]) -> dict | None:
     return pending
 
 
+def checkpoint_interrupt(snapshot: Any) -> dict | None:
+    """Extract a resumable interrupt from a LangGraph state snapshot."""
+    if snapshot is None:
+        return None
+
+    interrupts = list(getattr(snapshot, "interrupts", []) or [])
+    if not interrupts:
+        for task in getattr(snapshot, "tasks", []) or []:
+            interrupts = list(getattr(task, "interrupts", []) or [])
+            if interrupts:
+                break
+
+    if not interrupts:
+        return None
+
+    raw = interrupts[0]
+    payload = getattr(raw, "value", raw)
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+
+    return {
+        "kind": (
+            "plan_approval" if payload.get("implementation_permission")
+            else "tool_approval" if payload.get("requires_tool_approval")
+            else "unknown"
+        ),
+        "payload": payload,
+        "event_uuid": None,
+    }
+
+
 # Best-effort AgentState reconstruction
 def reconstruct_agent_state(
     events: list[dict],
@@ -366,6 +397,10 @@ async def load_session(
     try:
         snapshot = await graph.aget_state(session_config)
         values = snapshot.values if snapshot is not None else None
+        # Older sessions may have a paused checkpoint but no interrupt_request
+        # event. Recover the prompt from LangGraph in that case.
+        if resumed.pending_interrupt is None:
+            resumed.pending_interrupt = checkpoint_interrupt(snapshot)
         # LangGraph returns an empty snapshot object rather than None when
         # the thread exists but has no checkpoint; treat empty as missing.
         if values and any(values.get(k) for k in ("coder_messages", "planner_messages")):

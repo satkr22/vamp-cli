@@ -119,6 +119,7 @@ async def main(
         is_session_started = False
         pending_command = None
         last_state = None
+        permission_prompt_active = False
         
         coder_name = getattr(coder_profile.model, "model_name", None) or getattr(coder_profile.model, "model", "default")
         planner_name = getattr(planner_profile.model, "model_name", None) or getattr(planner_profile.model, "model", "default")
@@ -152,7 +153,7 @@ async def main(
         
 
         # Bottom toolbar dynamic status generator
-        def get_bottom_toolbar():
+        def get_bottom_statusbar():
             ctx_limit = planner_profile.context_window if selected_mode == "plan" else coder_profile.context_window
             used = emitter.last_input_tokens
             pct = f"{(used / ctx_limit * 100):.1f}%" if ctx_limit and used else "0%"
@@ -165,7 +166,7 @@ async def main(
 
         session = PromptSession(
             completer=AtFileCompleter(root_dir=project_dir),
-            bottom_toolbar=get_bottom_toolbar,
+            bottom_toolbar=get_bottom_statusbar,
         )
         
         
@@ -189,18 +190,31 @@ async def main(
                 interrupt_kind = "unknown"
                 console.print(Panel(str(checkpoint_data), title="Interrupt Review"))
             
-            with patch_stdout():
-                choice = (await session.prompt_async(HTML("<b>Authorize action? (y/n): </b>"))).strip().lower()
-                
-            if choice in ("y", "yes"):
-                console.print("[green]Authorized. Resuming execution...[/green]")
-                await log.append("interrupt_response", {"kind": interrupt_kind, "approved": True, "reason": None})
-                pending_command = Command(resume=FeedbackResponse(approved=True))
-            else:
+            try:
+                permission_prompt_active = True
                 with patch_stdout():
-                    reason = (await session.prompt_async(HTML("<b>Rejection reason: </b>"))).strip()
-                await log.append("interrupt_response", {"kind": interrupt_kind, "approved": False, "reason": reason})
-                console.print("[red]Blocked. Reporting reason back to agent...[/red]")
+                    choice = (await session.prompt_async(HTML("<b>Authorize action? (y/n): </b>"))).strip().lower()
+
+                if choice in ("y", "yes"):
+                    console.print("[green]Authorized. Resuming execution...[/green]")
+                    await log.append("interrupt_response", {"kind": interrupt_kind, "approved": True, "reason": None})
+                    pending_command = Command(resume=FeedbackResponse(approved=True))
+                else:
+                    with patch_stdout():
+                        reason = (await session.prompt_async(HTML("<b>Rejection reason: </b>"))).strip()
+                    await log.append("interrupt_response", {"kind": interrupt_kind, "approved": False, "reason": reason})
+                    console.print("[red]Blocked. Reporting reason back to agent...[/red]")
+                    pending_command = Command(resume=FeedbackResponse(approved=False, reason=reason))
+                permission_prompt_active = False
+            except KeyboardInterrupt:
+                permission_prompt_active = False
+                reason = "cancelled by user"
+                await log.append("interrupt_response", {
+                    "kind": interrupt_kind,
+                    "approved": False,
+                    "reason": reason,
+                })
+                console.print("\n[dim]Permission request cancelled. Ready for input.[/dim]")
                 pending_command = Command(resume=FeedbackResponse(approved=False, reason=reason))
         
         
@@ -387,21 +401,42 @@ async def main(
                         else:
                             interrupt_kind = "unknown"
                             console.print(Panel(str(checkpoint_data), title="Interrupt Review"))
-                        with patch_stdout():
-                            choice = (await session.prompt_async(HTML("<b>Authorize action? (y/n): </b>"))).strip().lower()
-                            
-                        if choice in ("y", "yes"):
-                            console.print("[green]Authorized. Resuming execution...[/green]")
-                            await log.append("interrupt_response", {"kind": interrupt_kind, "approved": True, "reason": None})
-                            pending_command = Command(resume=FeedbackResponse(approved=True))
-                            continue
-                        else:
+
+                        # Persist the request before asking for input. If the
+                        # process exits while the prompt is unanswered, resume
+                        # can rediscover it from the event log.
+                        await log.append("interrupt_request", {
+                            "kind": interrupt_kind,
+                            "payload": checkpoint_data,
+                        })
+
+                        try:
+                            permission_prompt_active = True
                             with patch_stdout():
-                                reason = (await session.prompt_async(HTML("<b>Rejection reason: </b>"))).strip()
-                            await log.append("interrupt_response", {"kind": interrupt_kind, "approved": False, "reason": reason})
-                            console.print("[red]Blocked. Reporting reason back to agent...[/red]")
+                                choice = (await session.prompt_async(HTML("<b>Authorize action? (y/n): </b>"))).strip().lower()
+
+                            if choice in ("y", "yes"):
+                                console.print("[green]Authorized. Resuming execution...[/green]")
+                                await log.append("interrupt_response", {"kind": interrupt_kind, "approved": True, "reason": None})
+                                pending_command = Command(resume=FeedbackResponse(approved=True))
+                            else:
+                                with patch_stdout():
+                                    reason = (await session.prompt_async(HTML("<b>Rejection reason: </b>"))).strip()
+                                await log.append("interrupt_response", {"kind": interrupt_kind, "approved": False, "reason": reason})
+                                console.print("[red]Blocked. Reporting reason back to agent...[/red]")
+                                pending_command = Command(resume=FeedbackResponse(approved=False, reason=reason))
+                            permission_prompt_active = False
+                        except KeyboardInterrupt:
+                            permission_prompt_active = False
+                            reason = "cancelled by user"
+                            await log.append("interrupt_response", {
+                                "kind": interrupt_kind,
+                                "approved": False,
+                                "reason": reason,
+                            })
+                            console.print("\n[dim]Permission request cancelled. Ready for input.[/dim]")
                             pending_command = Command(resume=FeedbackResponse(approved=False, reason=reason))
-                            continue
+                        continue
 
                     tok_usage = token_tracker.close()
                     max_ctx = planner_profile.context_window if selected_mode == "plan" else coder_profile.context_window
@@ -409,7 +444,18 @@ async def main(
 
             except KeyboardInterrupt:
                 console.print("\n[dim]Action cancelled. Ready for input.[/dim]")
-                pending_command = None
+                if permission_prompt_active:
+                    # A Ctrl+C during approval is an explicit cancellation.
+                    # Resolve the graph interrupt so it cannot be resumed later.
+                    permission_prompt_active = False
+                    pending_command = Command(
+                        resume=FeedbackResponse(
+                            approved=False,
+                            reason="cancelled by user",
+                        )
+                    )
+                else:
+                    pending_command = None
                 continue
             except Exception as e:
                 await log.close(reason="error")
