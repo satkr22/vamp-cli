@@ -33,7 +33,7 @@ For implementation-level component responsibilities, runtime flow, agent graph, 
 
 Below is a demonstration of the VAMP-CLI interface in action. The UI utilizes the **Rich** library to provide syntax highlighting, styled tables, and clear visual feedback during agent operations.
 
-<!-- ![VAMP-CLI Demo GIF](./assets/task.mp4) -->
+![VAMP-CLI Demo GIF](./assets/task.mp4)
 
 <h3>1. Task</h3>
 <video src="./assets/task.mp4" autoplay loop muted playsinline width="100%" style="border-radius: 8px; margin-bottom: 20px;"></video>
