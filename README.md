@@ -39,6 +39,11 @@ https://github.com/user-attachments/assets/3595a84d-790c-4a67-8ed7-d2aed92f2868
 
 <video src="https://github.com/user-attachments/assets/fe7be840-9e4f-4c93-a808-71ae623cfdd0" width="100%" controls></video>
 
+### 1. Task Demo (2:42)
+https://github.com/user-attachments/assets/fe7be840-9e4f-4c93-a808-71ae623cfdd0
+[![Watch Demo Video](https://shields.io)](https://github.com/user-attachments/assets/fe7be840-9e4f-4c93-a808-71ae623cfdd0)
+
+
 <h3>1. Task</h3>
 <video src="./assets/task.mp4" autoplay loop muted playsinline width="100%" style="border-radius: 8px; margin-bottom: 20px;"></video>
 
