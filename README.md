@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/3595a84d-790c-4a67-8ed7-d2aed92f2868
 
 <h3>1. Task</h3>
 <video src="./assets/task.mp4" autoplay loop muted playsinline width="100%" style="border-radius: 8px; margin-bottom: 20px;"></video>
-
+[![Watch the demo](.assets/task.mp4)](https://github.com/user-attachments/assets/fe7be840-9e4f-4c93-a808-71ae623cfdd0)
 <h3>2. Commands</h3>
 <video src="./assets/commands.mp4" autoplay loop muted playsinline width="100%" style="border-radius: 8px; margin-bottom: 20px;"></video>
 
